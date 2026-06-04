@@ -75,6 +75,9 @@ export const CURRENCY_PAIRS: CurrencyPair[] = [
   },
 ]
 
+// Alias used by SMC modules
+export const PAIR_CONFIGS = CURRENCY_PAIRS
+
 export function getPairBySymbol(symbol: string): CurrencyPair | undefined {
   return CURRENCY_PAIRS.find((p) => p.symbol === symbol)
 }
