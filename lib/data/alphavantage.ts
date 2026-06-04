@@ -11,9 +11,14 @@ function getApiKey(): string {
   return process.env.ALPHA_VANTAGE_API_KEY ?? ''
 }
 
+// Indices are not supported via the AV FX endpoint — fall back to simulation
+const INDEX_SYMBOLS = new Set(['NAS100', 'US500'])
+
 function pairToFromTo(pair: string): { from: string; to: string } | null {
+  if (INDEX_SYMBOLS.has(pair)) return null   // indices → simulation
   const parts = pair.split('/')
   if (parts.length !== 2) return null
+  // Metals (XAU, XAG) work fine with the FX endpoints on Alpha Vantage
   return { from: parts[0], to: parts[1] }
 }
 

@@ -32,8 +32,9 @@ function timeframeDurationMinutes(tf: Timeframe): number {
   }
 }
 
-// Annual volatility by pair
+// Annual volatility by instrument (GBM sigma)
 const VOLATILITIES: Record<string, number> = {
+  // Forex
   'EUR/USD': 0.08,
   'GBP/USD': 0.10,
   'USD/JPY': 0.09,
@@ -42,6 +43,12 @@ const VOLATILITIES: Record<string, number> = {
   'USD/CAD': 0.08,
   'NZD/USD': 0.12,
   'EUR/GBP': 0.07,
+  // Metals
+  'XAU/USD': 0.15,
+  'XAG/USD': 0.28,
+  // Indices
+  'NAS100':  0.22,
+  'US500':   0.18,
 }
 
 export function generateCandles(

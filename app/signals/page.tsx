@@ -6,8 +6,11 @@ import { SignalCard } from '@/components/smc/SignalCard'
 import { StructurePanel } from '@/components/smc/StructurePanel'
 import { RefreshCw, Zap, AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CURRENCY_PAIRS, getPairsByClass } from '@/lib/forex/pairs'
 
-const PAIRS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD', 'EUR/GBP']
+const FOREX_PAIRS   = getPairsByClass('forex').map((p) => p.symbol)
+const METAL_PAIRS   = getPairsByClass('metal').map((p) => p.symbol)
+const INDEX_PAIRS   = getPairsByClass('index').map((p) => p.symbol)
 const TIMEFRAMES = ['15m', '1h', '4h', '1d'] as const
 
 type TF = (typeof TIMEFRAMES)[number]
@@ -134,9 +137,9 @@ export default function SignalsPage() {
           <div>
             <p className="text-sm font-medium text-amber-400">Using Simulated Data</p>
             <p className="text-xs text-amber-400/80 mt-1">
-              For live market data, add your Alpha Vantage API key as the{' '}
-              <code className="bg-amber-500/20 px-1 rounded font-mono">ALPHA_VANTAGE_API_KEY</code>{' '}
-              environment variable. Get a free key at{' '}
+              Add <code className="bg-amber-500/20 px-1 rounded font-mono">ALPHA_VANTAGE_API_KEY</code> to{' '}
+              <code className="bg-amber-500/20 px-1 rounded font-mono">.env.local</code> for live
+              forex &amp; metals data (free key at{' '}
               <a
                 href="https://www.alphavantage.co/support/#api-key"
                 target="_blank"
@@ -145,7 +148,7 @@ export default function SignalsPage() {
               >
                 alphavantage.co
               </a>
-              .
+              ). Indices (NAS100, US500) always use high-fidelity GBM simulation.
             </p>
           </div>
         </div>
@@ -164,25 +167,42 @@ export default function SignalsPage() {
 
       {/* Controls */}
       <div className="space-y-3">
-        {/* Pair selector */}
-        <div>
-          <p className="text-xs text-[#8b949e] mb-2 font-medium">CURRENCY PAIR</p>
-          <div className="flex flex-wrap gap-2">
-            {PAIRS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPair(p)}
-                className={cn(
-                  'px-3 py-1.5 text-sm rounded border transition-colors font-mono',
-                  p === pair
-                    ? 'bg-[#58a6ff] text-white border-[#58a6ff]'
-                    : 'bg-[#21262d] text-[#8b949e] border-[#30363d] hover:text-[#e6edf3] hover:border-[#58a6ff]'
-                )}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+        <p className="text-xs text-[#8b949e] font-medium">INSTRUMENT</p>
+        {/* Instrument selector — grouped by asset class */}
+        <div className="space-y-2">
+          {[
+            { label: 'FOREX',   pairs: FOREX_PAIRS,  accent: '#58a6ff' },
+            { label: 'METALS',  pairs: METAL_PAIRS,  accent: '#d29922' },
+            { label: 'INDICES', pairs: INDEX_PAIRS,  accent: '#a371f7' },
+          ].map(({ label, pairs, accent }) => (
+            <div key={label} className="flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-semibold w-14 shrink-0" style={{ color: accent }}>
+                {label}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {pairs.map((sym) => {
+                  const cfg = CURRENCY_PAIRS.find((p) => p.symbol === sym)
+                  const isActive = pair === sym
+                  return (
+                    <button
+                      key={sym}
+                      onClick={() => setPair(sym)}
+                      title={cfg?.name}
+                      className={cn(
+                        'px-2.5 py-1 text-xs rounded border transition-colors font-mono',
+                        isActive
+                          ? 'text-white border-transparent'
+                          : 'bg-[#21262d] text-[#8b949e] border-[#30363d] hover:text-[#e6edf3]'
+                      )}
+                      style={isActive ? { background: accent, borderColor: accent } : undefined}
+                    >
+                      {sym}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Timeframe selector */}

@@ -9,14 +9,18 @@ export interface Candle {
   volume: number
 }
 
+export type AssetClass = 'forex' | 'metal' | 'index'
+
 export interface CurrencyPair {
-  symbol: string       // e.g. "EUR/USD"
-  base: string         // "EUR"
-  quote: string        // "USD"
-  digits: number       // decimal places (4 for most, 2 for JPY)
-  pipSize: number      // 0.0001 or 0.01
+  symbol: string       // e.g. "EUR/USD", "XAU/USD", "NAS100"
+  base: string
+  quote: string
+  name: string         // display name e.g. "Euro / USD", "Gold", "NASDAQ 100"
+  assetClass: AssetClass
+  digits: number       // decimal places
+  pipSize: number      // 0.0001 for FX, 0.1 for Gold, 1.0 for NAS100
   spread: number       // in pips
-  basePrice: number    // current base price for simulation
+  basePrice: number    // simulation base price
 }
 
 export type OrderSide = 'buy' | 'sell'

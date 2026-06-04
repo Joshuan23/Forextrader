@@ -6,7 +6,10 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 export function formatPrice(price: number, digits: number): string {
-  return price.toFixed(digits)
+  return price.toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
 }
 
 export function formatPips(pips: number): string {
