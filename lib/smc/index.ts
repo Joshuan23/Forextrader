@@ -1,12 +1,13 @@
 import type { Candle, Timeframe } from '@/types/forex'
 import type { SMCAnalysis } from '@/types/smc'
+import type { COTReport } from '@/types/cot'
 import { detectSwingPoints, detectStructureBreaks, getMarketStructure } from './structure'
 import { detectOrderBlocks } from './orderblocks'
 import { detectFairValueGaps } from './fvg'
 import { detectLiquidityLevels, detectLiquiditySweeps } from './liquidity'
 import { generateSignals } from './signals'
 
-export function analyzeSMC(pair: string, timeframe: Timeframe, candles: Candle[]): SMCAnalysis {
+export function analyzeSMC(pair: string, timeframe: Timeframe, candles: Candle[], cotReport?: COTReport): SMCAnalysis {
   // 1. Detect swing points
   const swingPoints = detectSwingPoints(candles)
 
@@ -42,10 +43,11 @@ export function analyzeSMC(pair: string, timeframe: Timeframe, candles: Candle[]
     sweeps,
     marketStructure,
     signals: [],
+    cotReport,
   }
 
-  // 8. Generate signals
-  const signals = generateSignals(partialAnalysis)
+  // 8. Generate signals (with institutional COT context)
+  const signals = generateSignals(partialAnalysis, cotReport)
 
   return {
     ...partialAnalysis,

@@ -1,4 +1,5 @@
 import type { Candle, OrderSide } from './forex'
+import type { COTReport } from './cot'
 
 export interface SwingPoint {
   index: number
@@ -99,6 +100,8 @@ export interface SMCSignal {
   fvg?: FairValueGap
   sweep?: LiquiditySweep
   structureBreak?: StructureBreak
+  cotAlignment?: 'aligned' | 'neutral' | 'opposed'
+  cotScore?: number
 }
 
 export interface SMCAnalysis {
@@ -114,4 +117,7 @@ export interface SMCAnalysis {
   sweeps: LiquiditySweep[]
   marketStructure: MarketStructure
   signals: SMCSignal[]
+  cotReport?: COTReport
 }
+
+export type { COTReport }

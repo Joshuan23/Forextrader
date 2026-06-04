@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { Timeframe } from '@/types/forex'
 import { getCandles } from '@/lib/data/provider'
 import { analyzeSMC } from '@/lib/smc'
+import { fetchCOT } from '@/lib/cot/cftc'
 
 const querySchema = z.object({
   pair: z.string().min(1),
@@ -28,10 +29,14 @@ export async function GET(request: NextRequest) {
 
     const { pair, timeframe, count } = parsed.data
 
-    const { candles, source: dataSource } = await getCandles(pair, timeframe as Timeframe, count)
+    // Fetch candles and COT data in parallel
+    const [{ candles, source: dataSource }, cotReport] = await Promise.all([
+      getCandles(pair, timeframe as Timeframe, count),
+      fetchCOT(pair),
+    ])
     const candleCount = candles.length
 
-    const analysis = analyzeSMC(pair, timeframe as Timeframe, candles)
+    const analysis = analyzeSMC(pair, timeframe as Timeframe, candles, cotReport)
 
     // Strip candles array — too large to return
     const { candles: _c, ...rest } = analysis

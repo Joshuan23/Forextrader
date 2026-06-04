@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { SMCAnalysis, SMCSignal } from '@/types/smc'
 import { SignalCard } from '@/components/smc/SignalCard'
 import { StructurePanel } from '@/components/smc/StructurePanel'
+import { COTPanel } from '@/components/cot/COTPanel'
 import { RefreshCw, Zap, AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CURRENCY_PAIRS, getPairsByClass } from '@/lib/forex/pairs'
@@ -242,8 +243,11 @@ export default function SignalsPage() {
       {/* Analysis content */}
       {!loading && analysis && (
         <div className="space-y-6">
-          {/* Structure Panel */}
-          <StructurePanel analysis={analysis} />
+          {/* Structure Panel + COT Panel side by side on large screens */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <StructurePanel analysis={analysis} />
+            {analysis.cotReport && <COTPanel cot={analysis.cotReport} />}
+          </div>
 
           {/* Signal summary stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

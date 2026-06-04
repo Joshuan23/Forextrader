@@ -8,6 +8,7 @@ import type {
   StructureBreak,
   TakeProfitLevel,
 } from '@/types/smc'
+import type { COTReport } from '@/types/cot'
 import { CURRENCY_PAIRS } from '@/lib/forex/pairs'
 import { findNearestOrderBlock } from './orderblocks'
 import { findNearestFVG } from './fvg'
@@ -25,6 +26,17 @@ function candleMs(timeframe: string): number {
   }
 }
 
+type COTAlignment = 'aligned' | 'neutral' | 'opposed'
+
+function cotAlignmentForDirection(cot: COTReport | undefined, direction: 'bullish' | 'bearish'): COTAlignment {
+  if (!cot || cot.source === 'unavailable') return 'neutral'
+  const { institutionalBias } = cot
+  const bullishBias = institutionalBias === 'strongly_bullish' || institutionalBias === 'bullish'
+  const bearishBias = institutionalBias === 'strongly_bearish' || institutionalBias === 'bearish'
+  if (direction === 'bullish') return bullishBias ? 'aligned' : bearishBias ? 'opposed' : 'neutral'
+  return bearishBias ? 'aligned' : bullishBias ? 'opposed' : 'neutral'
+}
+
 function scoreSetup(
   direction: 'bullish' | 'bearish',
   analysis: SMCAnalysis,
@@ -32,7 +44,8 @@ function scoreSetup(
   fvg: FairValueGap | null,
   recentSweep: LiquiditySweep | null,
   recentCHOCH: StructureBreak | null,
-  currentPrice: number
+  currentPrice: number,
+  cot?: COTReport
 ): number {
   let score = 0
   const { marketStructure } = analysis
@@ -83,10 +96,21 @@ function scoreSetup(
     score += 15
   }
 
+  // COT institutional alignment scoring (weekly data — highest-weight factor)
+  const cotAlignment = cotAlignmentForDirection(cot, direction)
+  if (cot && cot.source !== 'unavailable') {
+    const isStrong = cot.institutionalBias === 'strongly_bullish' || cot.institutionalBias === 'strongly_bearish'
+    if (cotAlignment === 'aligned') {
+      score += isStrong ? 25 : 15
+    } else if (cotAlignment === 'opposed') {
+      score -= 20
+    }
+  }
+
   return Math.max(0, Math.min(100, score))
 }
 
-function evaluateBullishSetup(analysis: SMCAnalysis): SMCSignal | null {
+function evaluateBullishSetup(analysis: SMCAnalysis, cot?: COTReport): SMCSignal | null {
   const pairConfig = CURRENCY_PAIRS.find((p) => p.symbol === analysis.pair)
   const pipSize = pairConfig?.pipSize ?? 0.0001
   const digits = pairConfig?.digits ?? 5
@@ -184,8 +208,13 @@ function evaluateBullishSetup(analysis: SMCAnalysis): SMCSignal | null {
   // Must have R:R >= 1
   if (primaryRR < 1) return null
 
-  const score = scoreSetup('bullish', analysis, ob && obNear ? ob : null, fvg && fvgNear ? fvg : null, recentSweep, recentCHOCH, currentPrice)
-  const confidence = score >= 65 ? 'high' : score >= 40 ? 'medium' : 'low'
+  const cotAlignment = cotAlignmentForDirection(cot, 'bullish')
+  const score = scoreSetup('bullish', analysis, ob && obNear ? ob : null, fvg && fvgNear ? fvg : null, recentSweep, recentCHOCH, currentPrice, cot)
+
+  // High confidence requires COT not opposing; medium bar raised slightly when COT available
+  const cotAvailable = cot && cot.source !== 'unavailable'
+  const baseHigh = cotAvailable && cotAlignment === 'opposed' ? 999 : 65
+  const confidence = score >= baseHigh ? 'high' : score >= 40 ? 'medium' : 'low'
 
   // Build triggers list
   const triggers: string[] = []
@@ -196,6 +225,10 @@ function evaluateBullishSetup(analysis: SMCAnalysis): SMCSignal | null {
   if (ob && obNear) triggers.push(`Bullish order block (${ob.strength} strength)`)
   if (fvg && fvgNear) triggers.push(`Bullish FVG (${fvg.sizeInPips.toFixed(1)} pips)`)
   if (analysis.marketStructure.fibLevel >= 50) triggers.push('Price in discount zone')
+  if (cot && cot.source !== 'unavailable') {
+    if (cotAlignment === 'aligned') triggers.push(`COT: institutions ${cot.institutionalBias.replace('_', ' ')} (score ${cot.institutionalScore > 0 ? '+' : ''}${cot.institutionalScore})`)
+    else if (cotAlignment === 'opposed') triggers.push(`⚠ COT: institutions ${cot.institutionalBias.replace('_', ' ')} — opposing signal`)
+  }
 
   return {
     id: `smc-buy-${analysis.pair}-${now}`,
@@ -217,10 +250,12 @@ function evaluateBullishSetup(analysis: SMCAnalysis): SMCSignal | null {
     fvg: fvg && fvgNear ? fvg : undefined,
     sweep: recentSweep ?? undefined,
     structureBreak: recentCHOCH ?? undefined,
+    cotAlignment,
+    cotScore: cot?.institutionalScore,
   }
 }
 
-function evaluateBearishSetup(analysis: SMCAnalysis): SMCSignal | null {
+function evaluateBearishSetup(analysis: SMCAnalysis, cot?: COTReport): SMCSignal | null {
   const pairConfig = CURRENCY_PAIRS.find((p) => p.symbol === analysis.pair)
   const pipSize = pairConfig?.pipSize ?? 0.0001
   const digits = pairConfig?.digits ?? 5
@@ -318,8 +353,12 @@ function evaluateBearishSetup(analysis: SMCAnalysis): SMCSignal | null {
   // Must have R:R >= 1
   if (primaryRR < 1) return null
 
-  const score = scoreSetup('bearish', analysis, ob && obNear ? ob : null, fvg && fvgNear ? fvg : null, recentSweep, recentCHOCH, currentPrice)
-  const confidence = score >= 65 ? 'high' : score >= 40 ? 'medium' : 'low'
+  const cotAlignment = cotAlignmentForDirection(cot, 'bearish')
+  const score = scoreSetup('bearish', analysis, ob && obNear ? ob : null, fvg && fvgNear ? fvg : null, recentSweep, recentCHOCH, currentPrice, cot)
+
+  const cotAvailable = cot && cot.source !== 'unavailable'
+  const baseHigh = cotAvailable && cotAlignment === 'opposed' ? 999 : 65
+  const confidence = score >= baseHigh ? 'high' : score >= 40 ? 'medium' : 'low'
 
   // Build triggers list
   const triggers: string[] = []
@@ -330,6 +369,10 @@ function evaluateBearishSetup(analysis: SMCAnalysis): SMCSignal | null {
   if (ob && obNear) triggers.push(`Bearish order block (${ob.strength} strength)`)
   if (fvg && fvgNear) triggers.push(`Bearish FVG (${fvg.sizeInPips.toFixed(1)} pips)`)
   if (analysis.marketStructure.fibLevel <= 50) triggers.push('Price in premium zone')
+  if (cot && cot.source !== 'unavailable') {
+    if (cotAlignment === 'aligned') triggers.push(`COT: institutions ${cot.institutionalBias.replace('_', ' ')} (score ${cot.institutionalScore > 0 ? '+' : ''}${cot.institutionalScore})`)
+    else if (cotAlignment === 'opposed') triggers.push(`⚠ COT: institutions ${cot.institutionalBias.replace('_', ' ')} — opposing signal`)
+  }
 
   return {
     id: `smc-sell-${analysis.pair}-${now}`,
@@ -351,16 +394,18 @@ function evaluateBearishSetup(analysis: SMCAnalysis): SMCSignal | null {
     fvg: fvg && fvgNear ? fvg : undefined,
     sweep: recentSweep ?? undefined,
     structureBreak: recentCHOCH ?? undefined,
+    cotAlignment,
+    cotScore: cot?.institutionalScore,
   }
 }
 
-export function generateSignals(analysis: SMCAnalysis): SMCSignal[] {
+export function generateSignals(analysis: SMCAnalysis, cot?: COTReport): SMCSignal[] {
   const signals: SMCSignal[] = []
 
-  const bullish = evaluateBullishSetup(analysis)
+  const bullish = evaluateBullishSetup(analysis, cot)
   if (bullish) signals.push(bullish)
 
-  const bearish = evaluateBearishSetup(analysis)
+  const bearish = evaluateBearishSetup(analysis, cot)
   if (bearish) signals.push(bearish)
 
   return signals
