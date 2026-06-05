@@ -48,13 +48,13 @@ export const CURRENCY_PAIRS: CurrencyPair[] = [
     symbol: 'XAU/USD', name: 'Gold',
     base: 'XAU', quote: 'USD', assetClass: 'metal',
     // 1 pip = $0.10; 35-pip spread ≈ $3.50 — realistic for spot gold
-    digits: 2, pipSize: 0.1, spread: 35, basePrice: 3300.00,
+    digits: 2, pipSize: 0.1, spread: 35, basePrice: 4300.00,
   },
   {
     symbol: 'XAG/USD', name: 'Silver',
     base: 'XAG', quote: 'USD', assetClass: 'metal',
     // 1 pip = $0.01; 50-pip spread ≈ $0.50 — typical spot silver
-    digits: 3, pipSize: 0.01, spread: 50, basePrice: 33.200,
+    digits: 3, pipSize: 0.01, spread: 50, basePrice: 50.500,
   },
 
   // ─── Indices ─────────────────────────────────────────────────────────
