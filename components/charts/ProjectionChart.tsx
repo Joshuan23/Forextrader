@@ -134,17 +134,6 @@ function extractNodes(
       })
     })
 
-  // Signal entry / SL / TPs
-  const sig = signals[0]
-  if (sig) {
-    const c = sig.direction === 'buy' ? '#3fb950' : '#f85149'
-    nodes.push({ price: sig.entry, label: `● Entry ${sig.direction.toUpperCase()}`, color: c, lineStyle: 'solid', weight: 2.8, type: 'entry' })
-    nodes.push({ price: sig.stopLoss, label: '✕ SL', color: '#f85149', lineStyle: 'dashed', weight: 1.6, type: 'sl' })
-    sig.takeProfits.slice(0, 2).forEach(tp => {
-      nodes.push({ price: tp.price, label: `◎ ${tp.label} ${tp.rr}R`, color: '#3fb950', lineStyle: 'dashed', weight: 1.4, type: 'tp' })
-    })
-  }
-
   // Deduplicate (merge nodes within 0.03% of each other)
   const deduped: KingNode[] = []
   nodes
@@ -186,9 +175,9 @@ export function ProjectionChart({
 
   const hist = useMemo(() => candles.slice(-N_HIST), [candles])
 
-  const { nodes, proj, priceMin, priceMax, currentPrice, direction, cotScore, nearestTarget } =
+  const { nodes, proj, priceMin, priceMax, currentPrice, direction, cotScore, nearestTarget, bestSignal } =
     useMemo(() => {
-      if (hist.length === 0) return { nodes: [], proj: [], priceMin: 0, priceMax: 0, currentPrice: 0, direction: 'neutral' as const, cotScore: 0, nearestTarget: null }
+      if (hist.length === 0) return { nodes: [], proj: [], priceMin: 0, priceMax: 0, currentPrice: 0, direction: 'neutral' as const, cotScore: 0, nearestTarget: null, bestSignal: null }
 
       const cp    = hist[hist.length - 1].close
       const atr   = atr14(hist)
@@ -200,6 +189,7 @@ export function ProjectionChart({
           : (bias === 'ranging' ? 'neutral' : bias)
 
       const kNodes = extractNodes(orderBlocks, fairValueGaps, liquidityLevels, signals, cp, atr)
+      const bestSignal = signals.find(s => s.confidence === 'high') ?? signals.find(s => s.confidence === 'medium') ?? null
 
       // Find nearest target in the direction of trade
       const targetNodes = kNodes.filter(n =>
@@ -216,6 +206,7 @@ export function ProjectionChart({
         ...hist.flatMap(c => [c.high, c.low]),
         ...kNodes.flatMap(n => [n.price, n.zoneTop ?? n.price, n.zoneBot ?? n.price]),
         ...p.flatMap(b => [b.u2, b.l2]),
+        ...(bestSignal ? [bestSignal.entry, bestSignal.stopLoss, ...bestSignal.takeProfits.slice(0, 2).map(t => t.price)] : []),
       ].filter(v => v > 0)
 
       const pMin = Math.min(...allPrices)
@@ -231,6 +222,7 @@ export function ProjectionChart({
         direction:     dir,
         cotScore:      score,
         nearestTarget: nearest,
+        bestSignal,
       }
     }, [hist, orderBlocks, fairValueGaps, liquidityLevels, signals, cotReport, bias])
 
@@ -415,6 +407,27 @@ export function ProjectionChart({
             <path d={band1} fill={projColor} opacity="0.11" />
           )}
 
+          {/* Trade setup zone fills (risk / reward regions) */}
+          {bestSignal && (() => {
+            const ey = yOf(bestSignal.entry)
+            const sy = yOf(bestSignal.stopLoss)
+            const tp1 = bestSignal.takeProfits[0]
+            const tp2 = bestSignal.takeProfits[1]
+            const t1y = tp1 ? yOf(tp1.price) : null
+            const t2y = tp2 ? yOf(tp2.price) : null
+            const a = bestSignal.confidence === 'high' ? 1 : 0.6
+            return (
+              <>
+                {/* Risk zone: SL → Entry */}
+                <rect x={PAD.left} y={Math.min(ey, sy)} width={CW} height={Math.max(1, Math.abs(ey - sy))} fill="#f85149" opacity={0.11 * a} />
+                {/* Reward zone 1: Entry → TP1 */}
+                {t1y !== null && <rect x={PAD.left} y={Math.min(ey, t1y)} width={CW} height={Math.max(1, Math.abs(ey - t1y))} fill="#3fb950" opacity={0.09 * a} />}
+                {/* Reward zone 2: TP1 → TP2 */}
+                {t1y !== null && t2y !== null && <rect x={PAD.left} y={Math.min(t1y, t2y)} width={CW} height={Math.max(1, Math.abs(t1y - t2y))} fill="#3fb950" opacity={0.05 * a} />}
+              </>
+            )
+          })()}
+
           {/* Projection upper/lower boundary lines */}
           {projPts.length > 1 && (
             <>
@@ -512,6 +525,27 @@ export function ProjectionChart({
             )
           })}
 
+          {/* Trade setup level lines (SL / Entry / TP1 / TP2) */}
+          {bestSignal && (() => {
+            const isBuy = bestSignal.direction === 'buy'
+            const ec = isBuy ? '#3fb950' : '#f85149'
+            const ey = yOf(bestSignal.entry)
+            const sy = yOf(bestSignal.stopLoss)
+            const tp1 = bestSignal.takeProfits[0]
+            const tp2 = bestSignal.takeProfits[1]
+            const t1y = tp1 ? yOf(tp1.price) : null
+            const t2y = tp2 ? yOf(tp2.price) : null
+            const a = bestSignal.confidence === 'high' ? 1 : 0.65
+            return (
+              <>
+                <line x1={PAD.left} y1={sy} x2={PAD.left + CW} y2={sy} stroke="#f85149" strokeWidth="1.5" strokeDasharray="6 3" opacity={0.80 * a} />
+                <line x1={PAD.left} y1={ey} x2={PAD.left + CW} y2={ey} stroke={ec} strokeWidth="2.5" opacity={0.90 * a} />
+                {t1y !== null && <line x1={PAD.left} y1={t1y} x2={PAD.left + CW} y2={t1y} stroke="#3fb950" strokeWidth="1.5" strokeDasharray="6 3" opacity={0.80 * a} />}
+                {t2y !== null && <line x1={PAD.left} y1={t2y} x2={PAD.left + CW} y2={t2y} stroke="#56d364" strokeWidth="1.2" strokeDasharray="2 4" opacity={0.60 * a} />}
+              </>
+            )
+          })()}
+
           {/* Current price line */}
           <line
             x1={PAD.left} y1={yOf(currentPrice)}
@@ -529,6 +563,47 @@ export function ProjectionChart({
         <text x={sepX + 4} y={PAD.top + 12} fill="#484f58" fontSize="9" fontFamily="monospace">
           PROJECTED →
         </text>
+
+        {/* Trade setup level labels (right margin pills) */}
+        {bestSignal && (() => {
+          const isBuy = bestSignal.direction === 'buy'
+          const ec = isBuy ? '#3fb950' : '#f85149'
+          const ey = yOf(bestSignal.entry)
+          const sy = yOf(bestSignal.stopLoss)
+          const tp1 = bestSignal.takeProfits[0]
+          const tp2 = bestSignal.takeProfits[1]
+          const t1y = tp1 ? yOf(tp1.price) : null
+          const t2y = tp2 ? yOf(tp2.price) : null
+          const a  = bestSignal.confidence === 'high' ? 1 : 0.75
+          const lx = PAD.left + CW + 3
+          const pw = 112
+          const isHigh = bestSignal.confidence === 'high'
+
+          const pill = (y: number, top: string, bot: string, color: string, key: string) => {
+            if (y < PAD.top - 10 || y > PAD.top + CH + 10) return null
+            return (
+              <g key={key}>
+                <line x1={PAD.left + CW} y1={y} x2={lx} y2={y} stroke={color} strokeWidth="0.8" opacity="0.6" />
+                <rect x={lx} y={y - 12} width={pw} height={22} fill={`${color}20`} rx="2" stroke={color} strokeWidth="0.7" />
+                <text x={lx + 4} y={y - 3} fill={color} fontSize="8.5" fontFamily="'SF Mono', monospace" fontWeight="700">{top}</text>
+                <text x={lx + 4} y={y + 8} fill="#8b949e" fontSize="7.5" fontFamily="'SF Mono', monospace">{bot}</text>
+              </g>
+            )
+          }
+
+          return (
+            <g opacity={a}>
+              {pill(sy, '✕ SL', fmt(bestSignal.stopLoss), '#f85149', 'tsl')}
+              {pill(ey,
+                isBuy ? '▲ BUY ENTRY' : '▼ SELL ENTRY',
+                `${fmt(bestSignal.entry)}  ${isHigh ? 'HIGH' : 'MED'}`,
+                ec, 'tent'
+              )}
+              {tp1 && t1y !== null && pill(t1y, '◎ TP1', `${fmt(tp1.price)}  ${tp1.rr.toFixed(1)}R`, '#3fb950', 'ttp1')}
+              {tp2 && t2y !== null && pill(t2y, '◎ TP2', `${fmt(tp2.price)}  ${tp2.rr.toFixed(1)}R`, '#56d364', 'ttp2')}
+            </g>
+          )
+        })()}
 
         {/* King node labels & circles (right of chart) */}
         {nodes.map((n, i) => {
