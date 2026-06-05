@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { SMCAnalysis, SMCSignal } from '@/types/smc'
+import type { Candle } from '@/types/forex'
 import { SignalCard } from '@/components/smc/SignalCard'
 import { StructurePanel } from '@/components/smc/StructurePanel'
 import { COTPanel } from '@/components/cot/COTPanel'
+import { ProjectionChart } from '@/components/charts/ProjectionChart'
 import { RefreshCw, Zap, AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CURRENCY_PAIRS, getPairsByClass } from '@/lib/forex/pairs'
@@ -36,6 +38,7 @@ export default function SignalsPage() {
   const [pair, setPair] = useState('EUR/USD')
   const [timeframe, setTimeframe] = useState<TF>('1h')
   const [analysis, setAnalysis] = useState<SMCApiResponse | null>(null)
+  const [candles, setCandles] = useState<Candle[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<number | null>(null)
@@ -44,16 +47,21 @@ export default function SignalsPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(
-        `/api/smc?pair=${encodeURIComponent(pair)}&timeframe=${timeframe}&count=200`
-      )
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string }
-        throw new Error(data.error ?? `HTTP ${res.status}`)
+      const [sRes, cRes] = await Promise.all([
+        fetch(`/api/smc?pair=${encodeURIComponent(pair)}&timeframe=${timeframe}&count=200`),
+        fetch(`/api/candles?pair=${encodeURIComponent(pair)}&timeframe=${timeframe}&count=80`),
+      ])
+      if (!sRes.ok) {
+        const data = (await sRes.json()) as { error?: string }
+        throw new Error(data.error ?? `HTTP ${sRes.status}`)
       }
-      const data = (await res.json()) as SMCApiResponse
+      const data = (await sRes.json()) as SMCApiResponse
       setAnalysis(data)
       setLastRefresh(Date.now())
+      if (cRes.ok) {
+        const cData = (await cRes.json()) as { candles: Candle[] }
+        setCandles(cData.candles ?? [])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -243,6 +251,19 @@ export default function SignalsPage() {
       {/* Analysis content */}
       {!loading && analysis && (
         <div className="space-y-6">
+          {/* Institutional Projection Chart */}
+          <ProjectionChart
+            candles={candles}
+            orderBlocks={analysis.orderBlocks}
+            fairValueGaps={analysis.fairValueGaps}
+            liquidityLevels={analysis.liquidityLevels}
+            signals={analysis.signals}
+            cotReport={analysis.cotReport}
+            pair={pair}
+            timeframe={timeframe}
+            bias={analysis.marketStructure.bias === 'ranging' ? 'ranging' : analysis.marketStructure.bias}
+          />
+
           {/* Structure Panel + COT Panel side by side on large screens */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <StructurePanel analysis={analysis} />
