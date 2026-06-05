@@ -168,3 +168,33 @@ export function getLivePrice(pair: string): LivePrice {
 export function getAllLivePrices(): LivePrice[] {
   return CURRENCY_PAIRS.map((p) => getLivePrice(p.symbol))
 }
+
+/**
+ * Generates candles identical in shape to generateCandles() but scaled so the
+ * last candle's close equals `anchorPrice` (a real market price).
+ * Ensures the chart ends at the correct level even when using synthetic history.
+ */
+export function generateAnchoredCandles(
+  pair: string,
+  timeframe: Timeframe,
+  count: number,
+  anchorPrice: number,
+): Candle[] {
+  const pairInfo = getPairBySymbol(pair)
+  if (!pairInfo || anchorPrice <= 0) return generateCandles(pair, timeframe, count)
+
+  const candles = generateCandles(pair, timeframe, count)
+  if (candles.length === 0) return candles
+
+  const lastClose = candles[candles.length - 1].close
+  if (lastClose === 0) return candles
+
+  const scale = anchorPrice / lastClose
+  return candles.map(c => ({
+    ...c,
+    open:  parseFloat((c.open  * scale).toFixed(pairInfo.digits)),
+    high:  parseFloat((c.high  * scale).toFixed(pairInfo.digits)),
+    low:   parseFloat((c.low   * scale).toFixed(pairInfo.digits)),
+    close: parseFloat((c.close * scale).toFixed(pairInfo.digits)),
+  }))
+}

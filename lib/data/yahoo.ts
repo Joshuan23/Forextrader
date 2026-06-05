@@ -53,9 +53,16 @@ function resample4h(candles: Candle[]): Candle[] {
 }
 
 async function yfFetch(ticker: string, params: YfParams): Promise<Response> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${params.interval}&range=${params.range}`
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${params.interval}&range=${params.range}&includePrePost=false`
   return fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; forextrader/1.0)' },
+    headers: {
+      'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept':          'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin':          'https://finance.yahoo.com',
+      'Referer':         'https://finance.yahoo.com/',
+    },
     next: { revalidate: 60 },
   })
 }
