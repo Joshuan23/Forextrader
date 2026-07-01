@@ -20,11 +20,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (status === 'none') {
-    const url = await createCheckoutSession(email)
+    const url = await createCheckoutSession(email, customerId)
     if (!url) {
       return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 })
     }
     return NextResponse.json({ redirect: url })
+  }
+
+  if (status === 'past_due') {
+    return NextResponse.json({
+      error: 'Your payment is past due. Please update your payment method.',
+      portalRedirect: `${process.env.NEXT_PUBLIC_APP_URL}/portal`,
+    }, { status: 402 })
   }
 
   return NextResponse.json({

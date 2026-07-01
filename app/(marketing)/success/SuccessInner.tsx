@@ -9,7 +9,10 @@ export default function SuccessInner() {
   const sessionId = params.get('session_id')
 
   useEffect(() => {
-    if (!sessionId) return
+    if (!sessionId) {
+      window.location.href = '/login'
+      return
+    }
 
     fetch(`/api/stripe/session?session_id=${sessionId}`)
       .then(r => r.json())
@@ -27,6 +30,9 @@ export default function SuccessInner() {
       .then(r => r?.json())
       .then(data => {
         if (data?.redirect) window.location.href = data.redirect
+      })
+      .catch(() => {
+        window.location.href = '/login'
       })
   }, [sessionId])
 

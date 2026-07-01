@@ -20,7 +20,7 @@ export function createSessionCookie(payload: Omit<SessionPayload, 'exp'>): strin
 export function parseSession(cookieHeader: string | null): SessionPayload | null {
   if (!cookieHeader) return null
 
-  const match = cookieHeader.match(new RegExp(`${COOKIE_NAME}=([^;]+)`))
+  const match = cookieHeader.match(/fxt_session=([^;]+)/)
   if (!match) return null
 
   const [data, sig] = match[1].split('.')
@@ -39,4 +39,3 @@ export function parseSession(cookieHeader: string | null): SessionPayload | null
   }
 }
 
-export const COOKIE_NAME_EXPORT = COOKIE_NAME
