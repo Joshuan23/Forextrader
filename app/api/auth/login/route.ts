@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSubscriptionStatus } from '@/lib/stripe'
+import { getSubscriptionStatus, createCheckoutSession } from '@/lib/stripe'
 import { createSessionCookie } from '@/lib/session'
 
 export async function POST(req: NextRequest) {
@@ -20,12 +20,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (status === 'none') {
-    const checkoutRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/stripe/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-    const { url } = await checkoutRes.json()
+    const url = await createCheckoutSession(email)
+    if (!url) {
+      return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 })
+    }
     return NextResponse.json({ redirect: url })
   }
 
