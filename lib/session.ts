@@ -26,12 +26,9 @@ export function parseSession(cookieHeader: string | null): SessionPayload | null
   const [data, sig] = match[1].split('.')
   if (!data || !sig) return null
 
-  const expectedSig = sign(data)
-  try {
-    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null
-  } catch {
-    return null
-  }
+  const sigBuf = Buffer.from(sig, 'base64url')
+  const expectedSigBuf = Buffer.from(sign(data), 'base64url')
+  if (sigBuf.length !== expectedSigBuf.length || !timingSafeEqual(sigBuf, expectedSigBuf)) return null
 
   try {
     const payload: SessionPayload = JSON.parse(Buffer.from(data, 'base64url').toString())
