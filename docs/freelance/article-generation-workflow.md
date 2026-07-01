@@ -5,7 +5,7 @@
 1. Open Semrush → Keyword Magic Tool
 2. Enter the client's target topic (e.g. "estate planning attorney chicago")
 3. Filter: Volume > 100/mo, KD < 40 (Keyword Difficulty)
-4. Pick primary keyword + 3–5 related keywords from results
+4. Pick primary keyword + 3 related keywords from results (prompt uses exactly 3 H2 slots)
 5. Note: search volume, top-ranking competitor URL
 
 ## Step 2: Generate article with Claude (5 min)
@@ -45,7 +45,7 @@ Include:
 1. Paste into Google Doc in client's shared Drive folder
 2. Title format: `[CLIENT_NAME] — [KEYWORD] — [MONTH YEAR]`
 3. Set sharing: "Anyone with link can comment"
-4. Send client a 1-line message: "Article 1/4 for [MONTH] is ready for your review: [GOOGLE_DOC_LINK]"
+4. Send client a 1-line message: "Article [N]/4 for [MONTH] is ready for your review: [GOOGLE_DOC_LINK]"
 
 ## Capacity
 

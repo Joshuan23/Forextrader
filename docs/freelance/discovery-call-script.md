@@ -5,6 +5,7 @@
 - [ ] Open their website
 - [ ] Run their domain in Semrush: note their DA, top 3 keywords, organic traffic estimate
 - [ ] Know one specific keyword where a competitor outranks them
+- [ ] Have a sample article open and ready to share (needed for Proof section)
 
 ---
 
