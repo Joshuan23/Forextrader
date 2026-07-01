@@ -9,6 +9,11 @@ export async function POST(req: NextRequest) {
 
   const { MAILCHIMP_API_KEY, MAILCHIMP_LIST_ID, MAILCHIMP_SERVER_PREFIX } = process.env
 
+  if (!MAILCHIMP_API_KEY || !MAILCHIMP_LIST_ID || !MAILCHIMP_SERVER_PREFIX) {
+    console.error('Mailchimp env vars missing')
+    return NextResponse.json({ error: 'Service misconfigured' }, { status: 500 })
+  }
+
   try {
     const res = await fetch(
       `https://${MAILCHIMP_SERVER_PREFIX}.api.mailchimp.com/3.0/lists/${MAILCHIMP_LIST_ID}/members`,
@@ -22,9 +27,15 @@ export async function POST(req: NextRequest) {
       }
     )
 
-    if (!res.ok && res.status !== 400) {
-      // 400 = already subscribed — treat as success
-      return NextResponse.json({ error: 'Failed to subscribe' }, { status: 500 })
+    if (!res.ok) {
+      if (res.status === 400) {
+        const body = await res.json()
+        if (body.title !== 'Member Exists') {
+          return NextResponse.json({ error: 'Failed to subscribe' }, { status: 500 })
+        }
+      } else {
+        return NextResponse.json({ error: 'Failed to subscribe' }, { status: 500 })
+      }
     }
   } catch {
     return NextResponse.json({ error: 'Network error' }, { status: 500 })

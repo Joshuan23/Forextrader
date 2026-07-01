@@ -11,12 +11,17 @@ export default function LandingPage() {
   async function handleWaitlist(e: FormEvent) {
     e.preventDefault()
     setLoading(true)
-    await fetch('/api/waitlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-    setLoading(false)
+    try {
+      await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+    } catch {
+      // network error — waitlist is best-effort, still show success
+    } finally {
+      setLoading(false)
+    }
     setSubmitted(true)
   }
 
