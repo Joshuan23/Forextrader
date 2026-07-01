@@ -12,22 +12,23 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-
-    const data = await res.json()
-    setLoading(false)
-
-    if (data.redirect) {
-      window.location.href = data.redirect
-      return
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (data.redirect) {
+        window.location.href = data.redirect
+        return
+      }
+      setError(data.error || 'Something went wrong. Try again.')
+    } catch {
+      setError('Network error. Check your connection and try again.')
+    } finally {
+      setLoading(false)
     }
-
-    setError(data.error || 'Something went wrong. Try again.')
   }
 
   return (

@@ -9,5 +9,14 @@ export async function GET(req: NextRequest) {
   }
 
   const session = await stripe.checkout.sessions.retrieve(sessionId)
+
+  if (session.status !== 'complete') {
+    return NextResponse.json({ error: 'Checkout not completed' }, { status: 402 })
+  }
+
+  if (!session.customer_email) {
+    return NextResponse.json({ error: 'No email on session' }, { status: 422 })
+  }
+
   return NextResponse.json({ email: session.customer_email })
 }
