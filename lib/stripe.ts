@@ -27,6 +27,18 @@ export async function getSubscriptionStatus(email: string): Promise<{
   }
 
   const sub = subscriptions.data[0]
-  const status = sub.status as SubscriptionStatus
+  // Map all Stripe statuses to our union; unmapped ones (unpaid, incomplete, paused) → past_due or none
+  const STATUS_MAP: Record<string, SubscriptionStatus> = {
+    active: 'active',
+    trialing: 'trialing',
+    past_due: 'past_due',
+    canceled: 'canceled',
+    unpaid: 'past_due',
+    incomplete: 'none',
+    incomplete_expired: 'none',
+    paused: 'none',
+  }
+  // limit:1 returns the most-recently-created subscription (assumes one active sub per customer)
+  const status: SubscriptionStatus = STATUS_MAP[sub.status] ?? 'none'
   return { status, customerId: customer.id }
 }
