@@ -54,8 +54,10 @@ Just reply with the topic you most want to rank for (e.g. "estate planning attor
 
 ## Personalization checklist before sending
 
+- [ ] Find the decision-maker's first name for [FIRST_NAME]
 - [ ] Find their website, check DA (use Semrush → Overview → Domain Authority)
-- [ ] Find a competitor ranking above them for a valuable keyword
-- [ ] Replace all [BRACKETS] with real values
+- [ ] Find a competitor ranking above them for a valuable keyword → fill [COMPETITOR] and [KEYWORD]
+- [ ] Identify the firm's city → fill [CITY]
+- [ ] Identify a real comparable firm or use "a [CITY] [service type] firm" for [SIMILAR_FIRM] in Email 2
 - [ ] Confirm Calendly link is correct
 - [ ] Send Email 1, set reminder for Day 3 and Day 5
