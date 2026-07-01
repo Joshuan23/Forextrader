@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard, highlight: false },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, highlight: false },
   { href: '/signals', label: 'SMC Signals', icon: Zap, highlight: true },
   { href: '/charts', label: 'Charts', icon: LineChart, highlight: false },
   { href: '/backtesting', label: 'Backtesting', icon: FlaskConical, highlight: false },
