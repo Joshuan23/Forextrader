@@ -8,23 +8,23 @@
 
 ## Phase 2: Routing Architecture
 
-- [ ] Task 4: Install Stripe and update env vars
-- [ ] Task 5: Create subscription types
-- [ ] Task 6: Create Stripe server client
-- [ ] Task 7: Create session cookie utilities
-- [ ] Task 8: Move root layout to minimal shell; create route group layouts
-- [ ] Task 9: Move existing app pages into (app) route group
+- [x] Task 4: Install Stripe and update env vars
+- [x] Task 5: Create subscription types
+- [x] Task 6: Create Stripe server client
+- [x] Task 7: Create session cookie utilities
+- [x] Task 8: Move root layout to minimal shell; create route group layouts
+- [x] Task 9: Move existing app pages into (app) route group
 
 ## Phase 3: Stripe API Routes
 
-- [ ] Task 10: Create Stripe Checkout session API route
-- [ ] Task 11: Create Stripe webhook handler
-- [ ] Task 12: Create email login API route
-- [ ] Task 13: Create auth middleware
+- [x] Task 10: Create Stripe Checkout session API route
+- [x] Task 11: Create Stripe webhook handler
+- [x] Task 12: Create email login API route
+- [x] Task 13: Create auth middleware
 
 ## Phase 4: Marketing Pages
 
-- [ ] Task 14: Create login page
-- [ ] Task 15: Create post-checkout success page
-- [ ] Task 16: Create landing page
-- [ ] Task 17: Create waitlist API route (Mailchimp)
+- [x] Task 14: Create login page
+- [x] Task 15: Create post-checkout success page
+- [x] Task 16: Create landing page
+- [x] Task 17: Create waitlist API route (Mailchimp)
