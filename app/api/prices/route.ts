@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
           change: lastCandle
             ? parseFloat((((rate.mid - lastCandle.open) / lastCandle.open) * 100).toFixed(3))
             : 0,
+          changeAbs: lastCandle
+            ? parseFloat((rate.mid - lastCandle.open).toFixed(5))
+            : 0,
           high:   lastCandle ? Math.max(...candles.slice(-24).map(c => c.high)) : rate.mid,
           low:    lastCandle ? Math.min(...candles.slice(-24).map(c => c.low))  : rate.mid,
           time:   Date.now(),
