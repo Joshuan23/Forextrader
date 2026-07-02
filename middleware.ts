@@ -47,6 +47,14 @@ async function parseSession(cookieHeader: string | null): Promise<SessionPayload
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+
+  // Preview switch: when PREVIEW_MODE=true, skip the paywall so you can browse
+  // the app pages without a subscription. Off unless explicitly enabled — never
+  // set this in the production/live environment.
+  if (process.env.PREVIEW_MODE === 'true') {
+    return NextResponse.next()
+  }
+
   const session = await parseSession(req.headers.get('cookie'))
 
   if (AUTH_ONLY.includes(pathname) && session) {
