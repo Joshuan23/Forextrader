@@ -82,3 +82,12 @@ export function getPairBySymbol(symbol: string): CurrencyPair | undefined {
 export function getPairsByClass(assetClass: CurrencyPair['assetClass']): CurrencyPair[] {
   return CURRENCY_PAIRS.filter((p) => p.assetClass === assetClass)
 }
+
+// URL-safe slug for programmatic SEO routes, e.g. "EUR/USD" → "eur-usd"
+export function pairSlug(symbol: string): string {
+  return symbol.toLowerCase().replace('/', '-')
+}
+
+export function getPairBySlug(slug: string): CurrencyPair | undefined {
+  return CURRENCY_PAIRS.find((p) => pairSlug(p.symbol) === slug)
+}

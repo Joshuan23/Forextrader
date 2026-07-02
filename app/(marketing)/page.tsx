@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
-import { TrendingUp, Zap, BarChart2, FlaskConical, CheckCircle } from 'lucide-react'
+import Link from 'next/link'
+import { TrendingUp, Zap, BarChart2, FlaskConical, CheckCircle, ShieldCheck } from 'lucide-react'
 
 export default function LandingPage() {
   const [email, setEmail] = useState('')
@@ -35,12 +36,20 @@ export default function LandingPage() {
           </div>
           <span className="font-semibold text-[#e6edf3]">ForexTrader Pro</span>
         </div>
-        <a
-          href="/login"
-          className="text-sm text-[#8b949e] hover:text-[#e6edf3] transition-colors"
-        >
-          Sign in
-        </a>
+        <div className="flex items-center gap-5">
+          <Link
+            href="/tools"
+            className="text-sm text-[#8b949e] hover:text-[#e6edf3] transition-colors"
+          >
+            Free Tools
+          </Link>
+          <a
+            href="/login"
+            className="text-sm text-[#8b949e] hover:text-[#e6edf3] transition-colors"
+          >
+            Sign in
+          </a>
+        </div>
       </nav>
 
       {/* Hero */}
@@ -56,8 +65,8 @@ export default function LandingPage() {
         </h1>
 
         <p className="text-lg text-[#8b949e] max-w-xl mb-10">
-          Smart Money Concepts, COT positioning, and backtested strategies — all in one dashboard.
-          Built for serious traders.
+          Smart Money Concepts, COT positioning, backtested strategies, and a challenge tracker
+          that keeps you inside your prop-firm rules. Built for serious and funded traders.
         </p>
 
         {/* Waitlist form */}
@@ -89,8 +98,13 @@ export default function LandingPage() {
         <p className="text-xs text-[#484f58] mt-3">$99/month after launch. Cancel anytime.</p>
 
         {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-16 max-w-3xl w-full text-left">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-16 max-w-3xl w-full text-left">
           {[
+            {
+              icon: ShieldCheck,
+              title: 'Challenge Tracker',
+              desc: 'Live distance to your daily-loss and max-drawdown limits, with a safe risk-per-trade suggestion. Pass FTMO-style evaluations without rule violations.',
+            },
             {
               icon: Zap,
               title: 'SMC Signals',
@@ -118,8 +132,18 @@ export default function LandingPage() {
         </div>
       </main>
 
-      <footer className="text-center py-6 text-xs text-[#484f58] border-t border-[#21262d]">
-        © 2026 ForexTrader Pro · <a href="/login" className="hover:text-[#8b949e]">Sign in</a>
+      <footer className="text-center py-6 text-xs text-[#484f58] border-t border-[#21262d] space-x-1">
+        <span>© 2026 ForexTrader Pro</span>
+        <span>·</span>
+        <Link href="/tools/position-size-calculator" className="hover:text-[#8b949e]">
+          Position Size Calculator
+        </Link>
+        <span>·</span>
+        <Link href="/tools/prop-firm-drawdown-calculator" className="hover:text-[#8b949e]">
+          Prop Firm Drawdown Calculator
+        </Link>
+        <span>·</span>
+        <a href="/login" className="hover:text-[#8b949e]">Sign in</a>
       </footer>
     </div>
   )

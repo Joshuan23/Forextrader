@@ -1,9 +1,17 @@
 import Stripe from 'stripe'
 import { SubscriptionStatus } from '@/types/subscription'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-06-24.dahlia',
-})
+// Lazy singleton — constructing at module load makes `next build` (and any
+// environment without secrets, e.g. CI) crash while collecting page data.
+let _stripe: Stripe | null = null
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-06-24.dahlia',
+    })
+  }
+  return _stripe
+}
 
 const STATUS_MAP: Record<string, SubscriptionStatus> = {
   active: 'active',
@@ -20,7 +28,7 @@ export async function getSubscriptionStatus(email: string): Promise<{
   status: SubscriptionStatus
   customerId: string | null
 }> {
-  const customers = await stripe.customers.list({ email, limit: 1 })
+  const customers = await getStripe().customers.list({ email, limit: 1 })
 
   if (customers.data.length === 0) {
     return { status: 'none', customerId: null }
@@ -29,20 +37,20 @@ export async function getSubscriptionStatus(email: string): Promise<{
   const customer = customers.data[0]
 
   // Query active first to avoid returning a stale canceled sub when a newer active one exists
-  let subscriptions = await stripe.subscriptions.list({
+  let subscriptions = await getStripe().subscriptions.list({
     customer: customer.id,
     status: 'active',
     limit: 1,
   })
   if (subscriptions.data.length === 0) {
-    subscriptions = await stripe.subscriptions.list({
+    subscriptions = await getStripe().subscriptions.list({
       customer: customer.id,
       status: 'trialing',
       limit: 1,
     })
   }
   if (subscriptions.data.length === 0) {
-    subscriptions = await stripe.subscriptions.list({
+    subscriptions = await getStripe().subscriptions.list({
       customer: customer.id,
       status: 'all',
       limit: 1,
@@ -62,7 +70,7 @@ export async function createCheckoutSession(
   email: string,
   customerId?: string | null,
 ): Promise<string | null> {
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
     ...(customerId ? { customer: customerId } : { customer_email: email }),

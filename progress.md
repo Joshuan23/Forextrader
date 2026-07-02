@@ -28,3 +28,12 @@
 - [x] Task 15: Create post-checkout success page
 - [x] Task 16: Create landing page
 - [x] Task 17: Create waitlist API route (Mailchimp)
+
+## Phase 5: Prop-Firm Wedge + Programmatic SEO (Autopilot Engine)
+
+- [x] Task 18: Prop-tools calculation library (position sizing, challenge rules, presets)
+- [x] Task 19: Free public tools — position size calculator (+ per-pair SEO pages), prop-firm drawdown calculator
+- [x] Task 20: sitemap.xml + robots.txt + metadata for programmatic SEO
+- [x] Task 21: In-app Challenge Tracker (subscriber feature, localStorage persistence)
+- [x] Task 22: Landing page repositioned for prop-firm traders + free-tools internal links
+- [x] Task 23: Launch punch list (docs/launch-punch-list.md)

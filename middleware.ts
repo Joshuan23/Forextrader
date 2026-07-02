@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { SessionPayload } from '@/types/subscription'
 
-const PROTECTED = ['/dashboard', '/signals', '/charts', '/backtesting', '/strategies', '/positions']
+const PROTECTED = ['/dashboard', '/signals', '/charts', '/backtesting', '/strategies', '/positions', '/challenge']
 const AUTH_ONLY = ['/', '/login']
 
 // base64url → Uint8Array without relying on Node.js Buffer (Edge Runtime safe)
@@ -67,5 +67,5 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: ['/', '/login', '/dashboard/:path*', '/signals/:path*', '/charts/:path*',
-            '/backtesting/:path*', '/strategies/:path*', '/positions/:path*'],
+            '/backtesting/:path*', '/strategies/:path*', '/positions/:path*', '/challenge/:path*'],
 }

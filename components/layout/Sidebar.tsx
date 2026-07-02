@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Cpu,
   List,
+  ShieldCheck,
   TrendingUp,
   Zap,
 } from 'lucide-react'
@@ -15,7 +16,8 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, highlight: false },
-  { href: '/signals', label: 'SMC Signals', icon: Zap, highlight: true },
+  { href: '/signals', label: 'SMC Signals', icon: Zap, highlight: false },
+  { href: '/challenge', label: 'Challenge Tracker', icon: ShieldCheck, highlight: true },
   { href: '/charts', label: 'Charts', icon: LineChart, highlight: false },
   { href: '/backtesting', label: 'Backtesting', icon: FlaskConical, highlight: false },
   { href: '/strategies', label: 'Strategies', icon: Cpu, highlight: false },
