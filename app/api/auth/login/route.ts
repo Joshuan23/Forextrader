@@ -3,6 +3,13 @@ import { getSubscriptionStatus, createCheckoutSession } from '@/lib/stripe'
 import { createSessionCookie } from '@/lib/session'
 
 export async function POST(req: NextRequest) {
+  // Preview switch: when PREVIEW_MODE=true, skip Stripe entirely and let anyone
+  // straight into the app. Lets you demo the product without any Stripe setup.
+  // Off unless explicitly enabled — never set this in production.
+  if (process.env.PREVIEW_MODE === 'true') {
+    return NextResponse.json({ redirect: '/dashboard' })
+  }
+
   // Fail fast with a clear message if Stripe isn't configured, instead of
   // letting the Stripe SDK throw a raw exception that surfaces as a vague
   // "Network error" on the client.
