@@ -3,6 +3,5 @@
   "installCommand": "npm install",
   "env": {
     "NODE_VERSION": "20"
-  },
-  "nodeVersion": "20.x"
+  }
 }
