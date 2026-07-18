@@ -1,24 +1,32 @@
-import { PrismaClient } from '@prisma/client'
-import { PrismaPg } from '@prisma/adapter-pg'
+// Database module — only loaded on server at runtime, never during Next.js build
+// This prevents Prisma/pg from being bundled into the client
 
-// Optional database access. FlowEdge runs fully without a database
-// (in-memory mock stores, see lib/store) so local development needs no
-// Postgres. When DATABASE_URL is set, stores persist through Prisma.
+// Stub exports for type checking
+export type PrismaClient = any
 
-const globalForPrisma = globalThis as unknown as { flowedgePrisma?: PrismaClient | null }
+export function getDb(): any | null {
+  if (typeof window !== 'undefined') return null
+  if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) return null
 
-export function getDb(): PrismaClient | null {
-  if (globalForPrisma.flowedgePrisma !== undefined) return globalForPrisma.flowedgePrisma
+  try {
+    const { PrismaClient } = require('@prisma/client')
+    const { PrismaPg } = require('@prisma/adapter-pg')
 
-  const url = process.env.DATABASE_URL
-  if (!url) {
-    globalForPrisma.flowedgePrisma = null
+    const globalForPrisma = globalThis as unknown as { flowedgePrisma?: any | null }
+    if (globalForPrisma.flowedgePrisma !== undefined) return globalForPrisma.flowedgePrisma
+
+    const url = process.env.DATABASE_URL
+    if (!url) {
+      globalForPrisma.flowedgePrisma = null
+      return null
+    }
+
+    const adapter = new PrismaPg({ connectionString: url })
+    globalForPrisma.flowedgePrisma = new PrismaClient({ adapter })
+    return globalForPrisma.flowedgePrisma
+  } catch {
     return null
   }
-
-  const adapter = new PrismaPg({ connectionString: url })
-  globalForPrisma.flowedgePrisma = new PrismaClient({ adapter })
-  return globalForPrisma.flowedgePrisma
 }
 
 export function dbEnabled(): boolean {
