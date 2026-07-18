@@ -62,6 +62,19 @@ prisma/schema.prisma   Pair, Candle, EconomicEvent, Signal, TradePlan, JournalEn
 Scoring formulas, level math, and kill-switch rules are documented in
 [`docs/engine-spec.md`](docs/engine-spec.md).
 
+## TradingView hybrid pipeline
+
+TradingView detects setups; FlowEdge decides. The Pine v6 feeder
+(`pine/flowedge-signal-feeder.pine`) detects trend pullbacks, breakout continuations, range
+rejections, and London breakouts of the Asia range, and posts chart-native JSON to
+`POST /api/webhooks/tradingview` (secret-authenticated, Zod-validated, rate-limited, raw
+payloads audited). The app enriches each alert with session/event/volatility/execution/edge
+context, scores it, generates the exact plan, persists it, and answers with the decision —
+including `blocked` (NO TRADE). Outcomes are recorded via `POST /api/signals/:id/resolve` or
+the Signals page inbox. Setup guide and sample payloads:
+[`docs/tradingview-integration.md`](docs/tradingview-integration.md). Test locally with
+`npm run test:webhook`.
+
 ## Product rules
 
 - Grades: **A ≥ 85** (full size) · **B 70–84** (reduced size) · **C 60–69** (watch only) ·

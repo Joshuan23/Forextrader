@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, ShieldAlert, Timer } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { DirectionBadge, EventRiskBadge, GradeBadge, ConfidenceMeter } from './badges'
 import type { EngineSignal } from '@/lib/engine/types'
@@ -49,6 +50,23 @@ export function SignalCard({ signal, defaultOpen = false }: { signal: EngineSign
           </Link>
           <DirectionBadge direction={signal.direction} blocked={blocked} />
           <GradeBadge grade={signal.grade} />
+          {signal.source === 'tradingview' && (
+            <Badge variant="secondary" className="gap-1">
+              TV
+              {signal.chartUrl && (
+                <a href={signal.chartUrl} target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-primary">
+                  chart
+                </a>
+              )}
+            </Badge>
+          )}
+          {signal.lifecycle && signal.lifecycle !== 'active' && signal.lifecycle !== 'blocked' && (
+            <Badge
+              variant={signal.lifecycle === 'hit_tp1' || signal.lifecycle === 'hit_tp2' ? 'long' : signal.lifecycle === 'stopped' ? 'short' : 'muted'}
+            >
+              {signal.lifecycle.replace(/_/g, ' ')}
+            </Badge>
+          )}
           <span className="ml-auto">
             <ConfidenceMeter value={signal.confidence} blocked={blocked} />
           </span>

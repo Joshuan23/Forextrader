@@ -144,6 +144,7 @@ export async function evaluatePair(symbol: string, ctx: ScanContext): Promise<Pa
       createdAt: now,
       expiresAt: now + SIGNAL_EXPIRY_BARS * TF_MS[SIGNAL_TIMEFRAME],
       dataSource: signalData.source,
+      source: 'engine',
     }
 
     if (signal.status === 'approved') signals.push(signal)

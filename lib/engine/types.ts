@@ -232,7 +232,23 @@ export interface EngineSignal {
   createdAt: number
   expiresAt: number
   dataSource: 'live' | 'simulated'
+  // Signal origin: internal scanner or TradingView webhook
+  source: 'engine' | 'tradingview'
+  tvSetupType?: string // original chart-native setup name
+  tvMode?: 'watchlist' | 'automation'
+  chartUrl?: string
+  lifecycle?: SignalLifecycle // stored signals only
 }
+
+export type SignalLifecycle =
+  | 'active'
+  | 'invalid'
+  | 'hit_tp1'
+  | 'hit_tp2'
+  | 'stopped'
+  | 'expired'
+  | 'cancelled'
+  | 'blocked'
 
 // Journal-feedback layer: realised expectancy of this setup/session combo.
 export interface HistoricalEdge {

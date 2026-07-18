@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:webhook": "tsx scripts/send-test-alert.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

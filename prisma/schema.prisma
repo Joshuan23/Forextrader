@@ -139,6 +139,7 @@ model Signal {
   id              String         @id @default(cuid())
   pairId          String
   pair            Pair           @relation(fields: [pairId], references: [id])
+  source          String         @default("engine") // "engine" | "tradingview"
   timeframe       String
   direction       Direction
   entryType       EntryType      @default(limit)
@@ -247,6 +248,18 @@ model PairSessionStats {
   updatedAt   DateTime   @updatedAt
 
   @@unique([pairId, sessionTag])
+}
+
+// Raw inbound webhook payloads, kept verbatim for debugging/audit.
+model RawWebhookLog {
+  id         String   @id @default(cuid())
+  receivedAt DateTime @default(now())
+  sourceIp   String?
+  valid      Boolean
+  error      String?
+  payload    Json
+
+  @@index([receivedAt(sort: Desc)])
 }
 
 // ─── Configuration ───────────────────────────────────────────────────
