@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "FlowEdge",
+    "slug": "flowedge",
+    "version": "0.1.0",
+    "scheme": "flowedge",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#070b12",
+    "ios": {
+      "bundleIdentifier": "com.flowedge.app",
+      "supportsTablet": false,
+      "infoPlist": { "UIBackgroundModes": ["remote-notification"] }
+    },
+    "android": {
+      "package": "com.flowedge.app",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-notifications"],
+    "experiments": { "typedRoutes": true }
+  }
+}
