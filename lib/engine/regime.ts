@@ -59,17 +59,36 @@ export function classifyRegime(candles: Candle[], pipSize: number): RegimeState 
 }
 
 // 0–100 score: how tradable is this regime for the given setup direction bias.
-export function regimeScore(regime: RegimeState): { score: number; note: string } {
+// Classifier: volatile_expansion if ATR% ≥ 92 AND ATR > 1.8×median;
+// trending if ADX ≥ 22 with EMA20/50 stack aligned; quiet if ATR% ≤ 15;
+// else ranging. Score table: trending 90 · ranging 62 · quiet 35 · expansion 30.
+export function regimeScore(regime: RegimeState): { score: number; note: string; rule: string } {
   switch (regime.tag) {
     case 'trending_up':
     case 'trending_down':
-      return { score: 90, note: `Clear trend (ADX ${regime.adx})` }
+      return {
+        score: 90,
+        note: `Clear trend (ADX ${regime.adx})`,
+        rule: `ADX ${regime.adx} ≥ 22 with EMA20/50 aligned → trending → 90`,
+      }
     case 'ranging':
-      return { score: 62, note: `Range conditions (ADX ${regime.adx}) — mean-reversion setups only` }
+      return {
+        score: 62,
+        note: `Range conditions (ADX ${regime.adx}) — mean-reversion setups only`,
+        rule: `ADX ${regime.adx} < 22 (or EMAs mixed), ATR P${regime.atrPercentile} in 16–91 → ranging → 62`,
+      }
     case 'quiet':
-      return { score: 35, note: `Volatility compressed (ATR P${regime.atrPercentile}) — poor follow-through risk` }
+      return {
+        score: 35,
+        note: `Volatility compressed (ATR P${regime.atrPercentile}) — poor follow-through risk`,
+        rule: `ATR percentile ${regime.atrPercentile} ≤ 15 → quiet → 35`,
+      }
     case 'volatile_expansion':
-      return { score: 30, note: `Volatility expansion (ATR P${regime.atrPercentile}) — slippage and whipsaw risk` }
+      return {
+        score: 30,
+        note: `Volatility expansion (ATR P${regime.atrPercentile}) — slippage and whipsaw risk`,
+        rule: `ATR percentile ${regime.atrPercentile} ≥ 92 and ATR ${regime.atrPips}p > 1.8 × median ${regime.medianAtrPips}p → expansion → 30`,
+      }
   }
 }
 

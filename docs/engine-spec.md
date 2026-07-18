@@ -2,6 +2,17 @@
 
 This is the authoritative description of the deterministic logic in `lib/engine/`.
 
+## 0. Determinism guarantee
+
+The engine is a pure function of `(candles, liveRate, clock, settings, journal)`. The mock data
+path is also deterministic: simulated candles are aligned to closed-bar boundaries and seeded by
+`(pair, timeframe, alignedWindowStart)`, and the simulated live mid is exactly the close of the
+last completed bar. Two scans inside the same 15m bar therefore produce byte-identical signals;
+output changes only when a bar closes, a calendar event enters/leaves a window, a session
+boundary passes, or settings/journal change. Every price level and every layer score carries its
+own derivation record — symbolic formula, numeric substitution, and the reason the anchor was
+chosen — persisted on the signal and rendered on the signal card.
+
 ## 1. Confidence score (0–100)
 
 ```

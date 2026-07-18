@@ -76,14 +76,24 @@ export function evaluateExecution(
   }
 }
 
-export function executionScore(exec: ExecutionState): { score: number; note: string } {
-  if (!exec.ok) return { score: 10, note: exec.notes[0] }
-  let score = 100
-  if (exec.spreadState === 'normal') score -= 10
-  if (exec.spreadState === 'wide') score -= 45
-  score -= Math.min(35, Math.max(0, exec.spreadPctOfAtr - 8) * 2)
-  score -= Math.min(15, exec.slippage.avgPips * 20)
-  return { score: Math.max(0, Math.round(score)), note: exec.notes[0] }
+// score = 100 − spreadStatePenalty − costPenalty − slippagePenalty, where
+//   spreadStatePenalty: tight 0 · normal (1.1–1.8× typical) 10 · wide (>1.8×) 45
+//   costPenalty  = min(35, max(0, costPctOfATR − 8) × 2)
+//   slipPenalty  = min(15, avgSlippagePips × 20)
+// Hard fail (spread > limit or cost > 25% of ATR) → flat 10.
+export function executionScore(exec: ExecutionState): { score: number; note: string; rule: string } {
+  if (!exec.ok) {
+    return { score: 10, note: exec.notes[0], rule: `hard execution fail (${exec.notes[0]}) → flat 10` }
+  }
+  const statePenalty = exec.spreadState === 'normal' ? 10 : exec.spreadState === 'wide' ? 45 : 0
+  const costPenalty = Math.min(35, Math.max(0, exec.spreadPctOfAtr - 8) * 2)
+  const slipPenalty = Math.min(15, exec.slippage.avgPips * 20)
+  const score = Math.max(0, Math.round(100 - statePenalty - costPenalty - slipPenalty))
+  const rule =
+    `100 − ${statePenalty} (spread ${exec.spreadPips.toFixed(1)}p = ${exec.spreadState}) − ` +
+    `${costPenalty.toFixed(0)} (cost ${exec.spreadPctOfAtr}% of ATR, penalty 2×max(0,${exec.spreadPctOfAtr}−8) cap 35) − ` +
+    `${slipPenalty.toFixed(1)} (slippage ${exec.slippage.avgPips}p × 20, cap 15) = ${score}`
+  return { score, note: exec.notes[0], rule }
 }
 
 function hash(s: string): number {

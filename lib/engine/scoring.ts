@@ -21,6 +21,7 @@ import { applyWeightTilt, type StrategyProfileDef } from './profiles'
 
 export interface ScoreResult {
   confidence: number
+  confidenceEquation: string
   grade: Grade
   layerScores: LayerScore[]
   blockReasons: string[]
@@ -96,49 +97,66 @@ export function scoreSetup(
   const w = normalizeWeights(applyWeightTilt(settings.signalWeights, profile.weightTilt))
 
   // HTF alignment for THIS setup's direction.
+  // aligned → the 4H conviction score (88 or 62) · neutral → 50 · counter → 28
   let htfScore: number
   let htfNote: string
+  let htfRule: string
   if (view.htfBias === 'neutral') {
     htfScore = 50
     htfNote = 'No higher-timeframe bias — setup stands on its own'
+    htfRule = '4H bias neutral → 50'
   } else if ((setup.direction === 'long') === (view.htfBias === 'bullish')) {
     htfScore = view.htfBiasScore
     htfNote = `Trade direction aligned with ${view.htfBias} 4H bias`
+    htfRule = `${setup.direction} aligned with ${view.htfBias} 4H bias → conviction score ${view.htfBiasScore} (${view.htfNotes[0]})`
   } else {
     htfScore = 28
     htfNote = `Counter-trend against ${view.htfBias} 4H bias`
+    htfRule = `${setup.direction} against ${view.htfBias} 4H bias → 28`
   }
 
   const regimeRes = regimeScore(regime)
   // Mean-reversion setups actually prefer ranges; trend setups prefer trends.
   let regScore = regimeRes.score
+  let regRule = regimeRes.rule
   if (
     (setup.type === 'range_fade' || setup.type === 'liquidity_sweep_reversal') &&
     regime.tag === 'ranging'
   ) {
     regScore = 85
+    regRule = `${regimeRes.rule}; mean-reversion setup in a range → override 85`
   }
   if (setup.type === 'range_fade' && (regime.tag === 'trending_up' || regime.tag === 'trending_down')) {
     regScore = 25
+    regRule = `${regimeRes.rule}; range fade inside a trend → override 25`
   }
 
   const sessScore = session.marketOpen ? SESSION_QUALITY[session.tag] : 0
+  const sessRule = session.marketOpen
+    ? `session table: overlap 100 · london 85 · newyork 72 · asia/lon 62 · asia 45 · dead 15; now ${session.tag} → ${sessScore}`
+    : 'market closed → 0'
   const execRes = executionScore(execution)
   const eventRes = eventRiskScore(eventRisk, settings)
 
   const layerScores: LayerScore[] = [
-    { key: 'structure', label: 'Technical Structure', score: setup.quality, weight: w.structure, note: setup.rationale[0] },
-    { key: 'htfBias', label: 'Higher-TF Bias', score: htfScore, weight: w.htfBias, note: htfNote },
-    { key: 'regime', label: 'Volatility / Regime', score: regScore, weight: w.regime, note: regimeRes.note },
-    { key: 'session', label: 'Session / Liquidity', score: sessScore, weight: w.session, note: `${session.label} — ${session.liquidity} liquidity` },
-    { key: 'execution', label: 'Execution Quality', score: execRes.score, weight: w.execution, note: execRes.note },
-    { key: 'eventRisk', label: 'Macro / Event Risk', score: eventRes.score, weight: w.eventRisk, note: eventRes.note },
+    { key: 'structure', label: 'Technical Structure', score: setup.quality, weight: w.structure, note: setup.rationale[0], rule: setup.qualityRule },
+    { key: 'htfBias', label: 'Higher-TF Bias', score: htfScore, weight: w.htfBias, note: htfNote, rule: htfRule },
+    { key: 'regime', label: 'Volatility / Regime', score: regScore, weight: w.regime, note: regimeRes.note, rule: regRule },
+    { key: 'session', label: 'Session / Liquidity', score: sessScore, weight: w.session, note: `${session.label} — ${session.liquidity} liquidity`, rule: sessRule },
+    { key: 'execution', label: 'Execution Quality', score: execRes.score, weight: w.execution, note: execRes.note, rule: execRes.rule },
+    { key: 'eventRisk', label: 'Macro / Event Risk', score: eventRes.score, weight: w.eventRisk, note: eventRes.note, rule: eventRes.rule },
   ]
 
   const weighted = layerScores.reduce((sum, l) => sum + l.score * l.weight, 0)
   // Journal-feedback adjustment (historical edge) applies on top of the
   // weighted layers, then clamp to 0–100.
-  const confidence = Math.max(0, Math.min(100, Math.round(weighted + (edge?.adjustment ?? 0))))
+  const edgeAdj = edge?.adjustment ?? 0
+  const confidence = Math.max(0, Math.min(100, Math.round(weighted + edgeAdj)))
+  const confidenceEquation =
+    layerScores.map((l) => `${l.weight.toFixed(2)}×${l.score}`).join(' + ') +
+    ` = ${weighted.toFixed(1)}` +
+    (edgeAdj !== 0 ? ` ${edgeAdj > 0 ? '+' : '−'} ${Math.abs(edgeAdj)} (historical edge)` : '') +
+    ` → ${confidence}`
 
   const blockReasons = hardBlockReasons(
     setup, view, session, eventRisk, execution, regime, settings, profile, edge
@@ -158,7 +176,7 @@ export function scoreSetup(
           ? 'B'
           : 'C'
 
-  return { confidence, grade, layerScores, blockReasons }
+  return { confidence, confidenceEquation, grade, layerScores, blockReasons }
 }
 
 function normalizeWeights(weights: SignalWeights): SignalWeights {

@@ -147,6 +147,17 @@ export interface StructureView {
 
 export type EntryType = 'market' | 'limit' | 'stop'
 
+// Full audit trail for one price level: the symbolic rule, the numeric
+// substitution, and why that anchor was chosen. Every plan level has one.
+export interface LevelDerivation {
+  key: 'entry' | 'stopLoss' | 'takeProfit1' | 'takeProfit2' | 'takeProfit3'
+  label: string
+  value: number
+  formula: string // symbolic, e.g. "swingHigh − 0.5 × leg"
+  computation: string // numeric, e.g. "1.12500 − 0.5 × 0.00370 = 1.12315"
+  reason: string // why this anchor
+}
+
 export interface DetectedSetup {
   type: SetupType
   direction: Direction
@@ -157,6 +168,8 @@ export interface DetectedSetup {
   takeProfit2: number
   takeProfit3?: number
   quality: number // 0–100 technical quality before context filters
+  qualityRule: string // exact rule that produced the quality number
+  derivations: LevelDerivation[]
   rationale: string[]
   invalidation: string
 }
@@ -167,6 +180,7 @@ export interface LayerScore {
   score: number // 0–100
   weight: number // 0–1, normalised
   note: string
+  rule: string // exact rule + arithmetic that produced the score
 }
 
 export interface TradePlanDetail {
@@ -183,6 +197,8 @@ export interface TradePlanDetail {
   invalidationLogic: string
   managementPlan: string
   checklist: string[]
+  rrComputation: string // exact cost-adjusted R:R arithmetic
+  sizingComputation: string // exact position-size arithmetic
 }
 
 export interface EngineSignal {
@@ -197,9 +213,11 @@ export interface EngineSignal {
   setupType: SetupType
   grade: Grade
   confidence: number // 0–100
+  confidenceEquation: string // the exact weighted sum, substituted
   status: 'approved' | 'blocked'
   blockReasons: string[]
   layerScores: LayerScore[]
+  derivations: LevelDerivation[]
   plan: TradePlanDetail
   explanation: string
   session: SessionInfo

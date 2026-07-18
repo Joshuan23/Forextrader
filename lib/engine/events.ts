@@ -81,20 +81,40 @@ export function evaluateEventRisk(
 }
 
 // 0–100 score for the event layer.
-export function eventRiskScore(risk: EventRisk, settings: FlowEdgeSettings): { score: number; note: string } {
-  if (risk.inBlackout) return { score: 0, note: risk.blackoutReason ?? 'News blackout window' }
+// blackout → 0 · high risk (high-impact ≤ 120m away) → 35 · medium
+// (CB day, high-impact ≤ 8h, or medium-impact within ±60m) → 65 · low → 100.
+// Central-bank day additionally caps the score at 55 when the toggle is on.
+export function eventRiskScore(
+  risk: EventRisk,
+  settings: FlowEdgeSettings
+): { score: number; note: string; rule: string } {
+  if (risk.inBlackout) {
+    return {
+      score: 0,
+      note: risk.blackoutReason ?? 'News blackout window',
+      rule: `inside blackout window (${settings.newsBlackoutBeforeMin}m before / ${settings.newsBlackoutAfterMin}m after high-impact) → 0`,
+    }
+  }
   let score = 100
   const notes: string[] = []
+  const ruleParts: string[] = []
   if (risk.level === 'high') {
     score = 35
     notes.push('High-impact event approaching')
+    ruleParts.push(
+      `high risk (${risk.nextHighImpact ? `${risk.nextHighImpact.title} in ${risk.nextHighImpact.minutesTo}m ≤ 120m` : 'high-impact imminent'}) → 35`
+    )
   } else if (risk.level === 'medium') {
     score = 65
     notes.push('Elevated event risk today')
+    ruleParts.push('medium risk (CB day, high-impact ≤ 8h, or medium-impact ±60m) → 65')
+  } else {
+    ruleParts.push('no qualifying events → 100')
   }
   if (risk.centralBankDay && settings.centralBankDowngrade) {
     score = Math.min(score, 55)
     notes.push('Central bank day — signals downweighted')
+    ruleParts.push('central-bank day cap → min(score, 55)')
   }
-  return { score, note: notes.join('; ') || 'No material event risk' }
+  return { score, note: notes.join('; ') || 'No material event risk', rule: ruleParts.join('; ') + ` = ${score}` }
 }

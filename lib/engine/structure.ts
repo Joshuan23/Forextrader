@@ -3,9 +3,23 @@ import { detectSwingPoints, detectStructureBreaks, getMarketStructure } from '@/
 import { detectOrderBlocks, findNearestOrderBlock } from '@/lib/smc/orderblocks'
 import { detectLiquidityLevels, detectLiquiditySweeps, getTargetLiquidity } from '@/lib/smc/liquidity'
 import { ema } from '@/lib/forex/indicators'
-import type { DetectedSetup, Direction, HtfBias, RegimeState, StructureView } from './types'
+import type {
+  DetectedSetup,
+  Direction,
+  HtfBias,
+  LevelDerivation,
+  RegimeState,
+  StructureView,
+} from './types'
 
 // ─── Higher-timeframe bias ───────────────────────────────────────────
+// bias(4H) = agree(structureBias, emaBias):
+//   structureBias: HH+HL → bullish; LH+LL → bearish; else neutral
+//     (compares the last two 4H swing highs and last two 4H swing lows,
+//      swings = local extreme over ±3 bars)
+//   emaBias: close > EMA50(4H) → bullish; close < EMA50 → bearish
+// score: both agree → 88 · structure only → 62 · EMA only → 45 (bias
+// stays neutral) · neither → 40 (neutral)
 
 export function computeHtfBias(htfCandles: Candle[]): { bias: HtfBias; score: number; notes: string[] } {
   const swings = detectSwingPoints(htfCandles)
@@ -26,19 +40,23 @@ export function computeHtfBias(htfCandles: Candle[]): { bias: HtfBias; score: nu
   if (structBias !== 'neutral' && structBias === emaBias) {
     bias = structBias
     score = 88
-    notes.push(`4H structure ${structBias} (${structBias === 'bullish' ? 'HH/HL' : 'LH/LL'}) and price ${structBias === 'bullish' ? 'above' : 'below'} 4H EMA50 — aligned`)
+    notes.push(
+      `4H structure ${structBias} (${structBias === 'bullish' ? 'HH/HL' : 'LH/LL'}) AND close ${structBias === 'bullish' ? '>' : '<'} 4H EMA50 (${lastEma?.toFixed(5)}) → bias ${structBias}, conviction 88`
+    )
   } else if (structBias !== 'neutral') {
     bias = structBias
     score = 62
-    notes.push(`4H structure ${structBias} but EMA50 position disagrees — bias with reduced conviction`)
+    notes.push(
+      `4H structure ${structBias} but close ${emaBias === 'bullish' ? '>' : '<'} EMA50 (${lastEma?.toFixed(5)}) disagrees → bias ${structBias}, conviction 62`
+    )
   } else if (emaBias !== 'neutral') {
     bias = 'neutral'
     score = 45
-    notes.push(`4H structure ranging; only EMA50 leans ${emaBias} — treated as neutral`)
+    notes.push(`4H structure ranging; only EMA50 leans ${emaBias} → neutral, conviction 45`)
   } else {
     bias = 'neutral'
     score = 40
-    notes.push('4H timeframe has no directional structure')
+    notes.push('4H structure ranging and no EMA lean → neutral, conviction 40')
   }
 
   const lastBreak = structure.lastCHOCH ?? structure.lastBOS
@@ -100,6 +118,22 @@ export function detectSetups(ctx: SetupContext): DetectedSetup[] {
   return setups.sort((a, b) => b.quality - a.quality).slice(0, 2)
 }
 
+// Derivation-row helper.
+function d(
+  key: LevelDerivation['key'],
+  label: string,
+  value: number,
+  formula: string,
+  computation: string,
+  reason: string
+): LevelDerivation {
+  return { key, label, value, formula, computation, reason }
+}
+
+// ── Pullback continuation ──
+// entry = 50% retracement of the last impulse leg (limit)
+// stop  = anchor swing ∓ 0.5×ATR
+// TP1   = impulse extreme · TP2 = extreme ± 0.618×leg · TP3 = extreme ± 1.0×leg
 function detectPullbackContinuation(ctx: SetupContext): DetectedSetup[] {
   const { view, candles, atr, pair } = ctx
   if (view.htfBias === 'neutral') return []
@@ -116,26 +150,52 @@ function detectPullbackContinuation(ctx: SetupContext): DetectedSetup[] {
   const range = lastHigh.price - lastLow.price
   if (range <= 0) return []
 
-  const d = pair.digits
+  const dg = pair.digits
+  const f = (n: number) => n.toFixed(dg)
   let entry: number, stopLoss: number, tp1: number, tp2: number, tp3: number
+  let derivations: LevelDerivation[]
+
   if (dir === 'long') {
-    entry = round(lastHigh.price - range * 0.5, d) // 50% retracement of the impulse
-    stopLoss = round(lastLow.price - atr * 0.5, d)
-    tp1 = round(lastHigh.price, d)
-    tp2 = round(lastHigh.price + range * 0.618, d)
-    tp3 = round(lastHigh.price + range, d)
+    entry = round(lastHigh.price - range * 0.5, dg)
+    stopLoss = round(lastLow.price - atr * 0.5, dg)
+    tp1 = round(lastHigh.price, dg)
+    tp2 = round(lastHigh.price + range * 0.618, dg)
+    tp3 = round(lastHigh.price + range, dg)
+    derivations = [
+      d('entry', 'Entry', entry, 'swingHigh − 0.50 × leg', `${f(lastHigh.price)} − 0.50 × ${f(range)} = ${f(entry)}`,
+        `Limit at the 50% retracement of the ${f(lastLow.price)}→${f(lastHigh.price)} impulse — the deepest pullback that keeps the leg's HL structure intact`),
+      d('stopLoss', 'Stop', stopLoss, 'swingLow − 0.50 × ATR', `${f(lastLow.price)} − 0.50 × ${f(atr)} = ${f(stopLoss)}`,
+        `Beyond the swing low that anchors the leg (structure invalidation), plus a half-ATR buffer against stop-hunt wicks`),
+      d('takeProfit1', 'TP1', tp1, 'swingHigh', `= ${f(tp1)}`,
+        'The impulse extreme — first liquidity objective where partial profit is banked'),
+      d('takeProfit2', 'TP2', tp2, 'swingHigh + 0.618 × leg', `${f(lastHigh.price)} + 0.618 × ${f(range)} = ${f(tp2)}`,
+        'Standard 61.8% fib extension of the impulse — the measured continuation target'),
+      d('takeProfit3', 'TP3', tp3, 'swingHigh + 1.00 × leg', `${f(lastHigh.price)} + 1.00 × ${f(range)} = ${f(tp3)}`,
+        'Full 100% leg extension — runner target if the trend stays one-sided'),
+    ]
   } else {
-    entry = round(lastLow.price + range * 0.5, d)
-    stopLoss = round(lastHigh.price + atr * 0.5, d)
-    tp1 = round(lastLow.price, d)
-    tp2 = round(lastLow.price - range * 0.618, d)
-    tp3 = round(lastLow.price - range, d)
+    entry = round(lastLow.price + range * 0.5, dg)
+    stopLoss = round(lastHigh.price + atr * 0.5, dg)
+    tp1 = round(lastLow.price, dg)
+    tp2 = round(lastLow.price - range * 0.618, dg)
+    tp3 = round(lastLow.price - range, dg)
+    derivations = [
+      d('entry', 'Entry', entry, 'swingLow + 0.50 × leg', `${f(lastLow.price)} + 0.50 × ${f(range)} = ${f(entry)}`,
+        `Limit at the 50% retracement of the ${f(lastHigh.price)}→${f(lastLow.price)} impulse — the deepest pullback that keeps the leg's LH structure intact`),
+      d('stopLoss', 'Stop', stopLoss, 'swingHigh + 0.50 × ATR', `${f(lastHigh.price)} + 0.50 × ${f(atr)} = ${f(stopLoss)}`,
+        `Beyond the swing high that anchors the leg (structure invalidation), plus a half-ATR buffer against stop-hunt wicks`),
+      d('takeProfit1', 'TP1', tp1, 'swingLow', `= ${f(tp1)}`,
+        'The impulse extreme — first liquidity objective where partial profit is banked'),
+      d('takeProfit2', 'TP2', tp2, 'swingLow − 0.618 × leg', `${f(lastLow.price)} − 0.618 × ${f(range)} = ${f(tp2)}`,
+        'Standard 61.8% fib extension of the impulse — the measured continuation target'),
+      d('takeProfit3', 'TP3', tp3, 'swingLow − 1.00 × leg', `${f(lastLow.price)} − 1.00 × ${f(range)} = ${f(tp3)}`,
+        'Full 100% leg extension — runner target if the trend stays one-sided'),
+    ]
   }
 
-  // entry must be on the correct side of current price and within reach
+  // entry must be within actionable reach of current price
   const price = candles[candles.length - 1].close
-  const reach = Math.abs(price - entry)
-  if (reach > atr * 1.6) return []
+  if (Math.abs(price - entry) > atr * 1.6) return []
 
   // OB confluence bumps quality
   const obConfluence = view.orderBlocks.some(
@@ -148,7 +208,7 @@ function detectPullbackContinuation(ctx: SetupContext): DetectedSetup[] {
 
   const rationale = [
     `Higher-timeframe bias is ${view.htfBias}; 15m is retracing (${Math.round(s.fibLevel)}% of the last impulse)`,
-    `Limit entry at the 50% retracement of the ${dir === 'long' ? `${fmt(lastLow.price, d)} → ${fmt(lastHigh.price, d)}` : `${fmt(lastHigh.price, d)} → ${fmt(lastLow.price, d)}`} leg`,
+    `Limit entry at the 50% retracement of the ${dir === 'long' ? `${f(lastLow.price)} → ${f(lastHigh.price)}` : `${f(lastHigh.price)} → ${f(lastLow.price)}`} leg`,
   ]
   if (obConfluence) rationale.push('Entry zone overlaps an unmitigated order block — added confluence')
 
@@ -163,15 +223,23 @@ function detectPullbackContinuation(ctx: SetupContext): DetectedSetup[] {
       takeProfit2: tp2,
       takeProfit3: tp3,
       quality: obConfluence ? 82 : 70,
+      qualityRule: obConfluence
+        ? 'base 70 (valid pullback, fib 30–78%) + 12 (entry inside unmitigated order block) = 82'
+        : 'base 70 (valid pullback, fib 30–78%), no order-block confluence',
+      derivations,
       rationale,
       invalidation:
         dir === 'long'
-          ? `A 15m close below ${fmt(lastLow.price, d)} (the swing low that anchors this leg) invalidates the idea before entry.`
-          : `A 15m close above ${fmt(lastHigh.price, d)} (the swing high that anchors this leg) invalidates the idea before entry.`,
+          ? `A 15m close below ${f(lastLow.price)} (the swing low that anchors this leg) invalidates the idea before entry.`
+          : `A 15m close above ${f(lastHigh.price)} (the swing high that anchors this leg) invalidates the idea before entry.`,
     },
   ]
 }
 
+// ── Order-block mitigation ──
+// entry = proximal edge of nearest unmitigated OB in bias direction (limit)
+// stop  = distal edge ∓ 0.35×ATR
+// TP1 = entry ± 1.5×risk · TP2 = nearest unswept liquidity ≥1.8R else 2.5R
 function detectOrderblockMitigation(ctx: SetupContext): DetectedSetup[] {
   const { view, candles, atr, pair } = ctx
   if (view.htfBias === 'neutral') return []
@@ -181,29 +249,45 @@ function detectOrderblockMitigation(ctx: SetupContext): DetectedSetup[] {
   const ob = findNearestOrderBlock(price, view.orderBlocks, obDir, pair.pipSize)
   if (!ob) return []
 
-  const d = pair.digits
+  const dg = pair.digits
+  const f = (n: number) => n.toFixed(dg)
   const proximal = dir === 'long' ? ob.high : ob.low
   const distal = dir === 'long' ? ob.low : ob.high
-  const distance = Math.abs(price - proximal)
-  if (distance > atr * 2.2) return [] // too far to be actionable this session
+  if (Math.abs(price - proximal) > atr * 2.2) return []
 
-  const entry = round(proximal, d)
-  const stopLoss = round(dir === 'long' ? distal - atr * 0.35 : distal + atr * 0.35, d)
+  const entry = round(proximal, dg)
+  const stopLoss = round(dir === 'long' ? distal - atr * 0.35 : distal + atr * 0.35, dg)
   const risk = Math.abs(entry - stopLoss)
   if (risk <= 0) return []
 
   const targets = getTargetLiquidity(price, view.keyLevels, obDir)
-  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, d)
+  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, dg)
   const tp2Liquidity = targets[0]?.price
+  const useLiquidityTp2 = Boolean(tp2Liquidity && Math.abs(tp2Liquidity - entry) > risk * 1.8)
   const tp2 = round(
-    tp2Liquidity && Math.abs(tp2Liquidity - entry) > risk * 1.8
-      ? tp2Liquidity
-      : dir === 'long'
-        ? entry + risk * 2.5
-        : entry - risk * 2.5,
-    d
+    useLiquidityTp2 ? (tp2Liquidity as number) : dir === 'long' ? entry + risk * 2.5 : entry - risk * 2.5,
+    dg
   )
-  const tp3 = targets[1] ? round(targets[1].price, d) : undefined
+  const tp3 = targets[1] ? round(targets[1].price, dg) : undefined
+
+  const sign = dir === 'long' ? '+' : '−'
+  const derivations: LevelDerivation[] = [
+    d('entry', 'Entry', entry, dir === 'long' ? 'orderBlock.high (proximal edge)' : 'orderBlock.low (proximal edge)', `= ${f(entry)}`,
+      `First touch of the ${ob.strength} ${obDir} order block ${f(ob.low)}–${f(ob.high)} — where the originating imbalance should defend`),
+    d('stopLoss', 'Stop', stopLoss, `orderBlock.${dir === 'long' ? 'low' : 'high'} ${dir === 'long' ? '−' : '+'} 0.35 × ATR`, `${f(distal)} ${dir === 'long' ? '−' : '+'} 0.35 × ${f(atr)} = ${f(stopLoss)}`,
+      'Through the distal edge the block has failed; 0.35×ATR buffer absorbs the spike that often pierces it first'),
+    d('takeProfit1', 'TP1', tp1, `entry ${sign} 1.5 × risk`, `${f(entry)} ${sign} 1.5 × ${f(risk)} = ${f(tp1)}`,
+      'Fixed 1.5R first objective — pays for the trade before the structural target'),
+    d('takeProfit2', 'TP2', tp2, useLiquidityTp2 ? 'nearest unswept liquidity level' : `entry ${sign} 2.5 × risk`,
+      useLiquidityTp2 ? `= ${f(tp2)} (${targets[0].type.replace(/_/g, ' ')})` : `${f(entry)} ${sign} 2.5 × ${f(risk)} = ${f(tp2)}`,
+      useLiquidityTp2
+        ? `Resting ${targets[0].type.replace(/_/g, ' ')} at ${f(tp2)} is ≥1.8R away — price is drawn to unswept liquidity`
+        : 'No clean liquidity pool ≥1.8R away in range, so a fixed 2.5R measured target is used'),
+    ...(tp3 !== undefined
+      ? [d('takeProfit3', 'TP3', tp3, 'next unswept liquidity level', `= ${f(tp3)} (${targets[1].type.replace(/_/g, ' ')})`,
+          'Second liquidity pool — runner objective')]
+      : []),
+  ]
 
   const quality = ob.strength === 'strong' ? 80 : ob.strength === 'medium' ? 68 : 55
 
@@ -218,18 +302,21 @@ function detectOrderblockMitigation(ctx: SetupContext): DetectedSetup[] {
       takeProfit2: tp2,
       takeProfit3: tp3,
       quality,
+      qualityRule: `order-block strength table: strong→80 · medium→68 · weak→55; this block is ${ob.strength} → ${quality}`,
+      derivations,
       rationale: [
-        `Unmitigated ${ob.strength} ${obDir} order block at ${fmt(ob.low, d)}–${fmt(ob.high, d)} in line with the ${view.htfBias} higher-timeframe bias`,
+        `Unmitigated ${ob.strength} ${obDir} order block at ${f(ob.low)}–${f(ob.high)} in line with the ${view.htfBias} higher-timeframe bias`,
         `Limit order at the ${dir === 'long' ? 'top' : 'bottom'} of the block; stop beyond the ${dir === 'long' ? 'low' : 'high'} plus an ATR buffer`,
-        tp2Liquidity
-          ? `TP2 targets resting liquidity at ${fmt(tp2, d)}`
-          : 'TP2 set at 2.5R (no clean liquidity target in range)',
+        useLiquidityTp2 ? `TP2 targets resting liquidity at ${f(tp2)}` : 'TP2 set at 2.5R (no clean liquidity target in range)',
       ],
-      invalidation: `If price trades through the block and closes beyond ${fmt(stopLoss, d)} on the 15m before filling the entry, the block has failed — cancel the order.`,
+      invalidation: `If price trades through the block and closes beyond ${f(stopLoss)} on the 15m before filling the entry, the block has failed — cancel the order.`,
     },
   ]
 }
 
+// ── Breakout & retest ──
+// entry = the broken structure level (limit at retest)
+// stop  = level ∓ 1.0×ATR · TP1 = 1.5R · TP2 = liquidity ≥1.6R else 2.4R
 function detectBreakoutRetest(ctx: SetupContext): DetectedSetup[] {
   const { view, candles, atr, pair } = ctx
   const breaks = view.recentBreaks
@@ -239,7 +326,6 @@ function detectBreakoutRetest(ctx: SetupContext): DetectedSetup[] {
   if (barsAgo < 0 || barsAgo > 12) return []
 
   const dir: Direction = last.direction === 'bullish' ? 'long' : 'short'
-  // Only trade breaks in the direction of (or resetting) the HTF bias.
   if (view.htfBias !== 'neutral') {
     const aligned = (dir === 'long') === (view.htfBias === 'bullish')
     if (!aligned && last.type !== 'CHOCH') return []
@@ -247,22 +333,30 @@ function detectBreakoutRetest(ctx: SetupContext): DetectedSetup[] {
 
   const price = candles[candles.length - 1].close
   const level = last.brokenLevel
-  if (Math.abs(price - level) > atr * 0.6) return [] // not retesting yet
+  if (Math.abs(price - level) > atr * 0.6) return []
 
-  const d = pair.digits
-  const entry = round(level, d)
-  const stopLoss = round(dir === 'long' ? level - atr * 1.0 : level + atr * 1.0, d)
+  const dg = pair.digits
+  const f = (n: number) => n.toFixed(dg)
+  const entry = round(level, dg)
+  const stopLoss = round(dir === 'long' ? level - atr * 1.0 : level + atr * 1.0, dg)
   const risk = Math.abs(entry - stopLoss)
   const targets = getTargetLiquidity(price, view.keyLevels, dir === 'long' ? 'bullish' : 'bearish')
-  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, d)
-  const tp2 = round(
-    targets[0] && Math.abs(targets[0].price - entry) > risk * 1.6
-      ? targets[0].price
-      : dir === 'long'
-        ? entry + risk * 2.4
-        : entry - risk * 2.4,
-    d
-  )
+  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, dg)
+  const useLiq = Boolean(targets[0] && Math.abs(targets[0].price - entry) > risk * 1.6)
+  const tp2 = round(useLiq ? targets[0].price : dir === 'long' ? entry + risk * 2.4 : entry - risk * 2.4, dg)
+
+  const sign = dir === 'long' ? '+' : '−'
+  const derivations: LevelDerivation[] = [
+    d('entry', 'Entry', entry, 'brokenLevel', `= ${f(entry)}`,
+      `The ${last.type} broke this swing level ${barsAgo} bars ago; former ${dir === 'long' ? 'resistance' : 'support'} should now act as ${dir === 'long' ? 'support' : 'resistance'} on the retest`),
+    d('stopLoss', 'Stop', stopLoss, `brokenLevel ${dir === 'long' ? '−' : '+'} 1.00 × ATR`, `${f(level)} ${dir === 'long' ? '−' : '+'} 1.00 × ${f(atr)} = ${f(stopLoss)}`,
+      'A full ATR beyond the level — if price travels one average bar-range back through it, the break has failed'),
+    d('takeProfit1', 'TP1', tp1, `entry ${sign} 1.5 × risk`, `${f(entry)} ${sign} 1.5 × ${f(risk)} = ${f(tp1)}`,
+      'Fixed 1.5R first objective'),
+    d('takeProfit2', 'TP2', tp2, useLiq ? 'nearest unswept liquidity level' : `entry ${sign} 2.4 × risk`,
+      useLiq ? `= ${f(tp2)} (${targets[0].type.replace(/_/g, ' ')})` : `${f(entry)} ${sign} 2.4 × ${f(risk)} = ${f(tp2)}`,
+      useLiq ? 'Continuation should run to the next resting liquidity pool' : 'No liquidity pool ≥1.6R in range — fixed 2.4R measured target'),
+  ]
 
   return [
     {
@@ -274,15 +368,20 @@ function detectBreakoutRetest(ctx: SetupContext): DetectedSetup[] {
       takeProfit1: tp1,
       takeProfit2: tp2,
       quality: last.type === 'CHOCH' ? 74 : 66,
+      qualityRule: `break-type table: CHOCH (trend change, fresher move) → 74 · BOS (continuation) → 66; this was a ${last.type} → ${last.type === 'CHOCH' ? 74 : 66}`,
+      derivations,
       rationale: [
-        `15m ${last.type} ${last.direction} through ${fmt(level, d)} ${barsAgo} bars ago; price is now retesting the broken level`,
-        `Entry at the retest of ${fmt(level, d)} with the stop one full ATR beyond the level`,
+        `15m ${last.type} ${last.direction} through ${f(level)} ${barsAgo} bars ago; price is now retesting the broken level`,
+        `Entry at the retest of ${f(level)} with the stop one full ATR beyond the level`,
       ],
-      invalidation: `A 15m close back ${dir === 'long' ? 'below' : 'above'} ${fmt(level, d)} negates the break — stand down.`,
+      invalidation: `A 15m close back ${dir === 'long' ? 'below' : 'above'} ${f(level)} negates the break — stand down.`,
     },
   ]
 }
 
+// ── Liquidity-sweep reversal ──
+// entry = current price after confirmed rejection (market)
+// stop  = sweep extreme ∓ 0.25×ATR · TP1 = 1.5R · TP2 = liquidity ≥1.6R else 2.5R
 function detectSweepReversal(ctx: SetupContext): DetectedSetup[] {
   const { view, candles, atr, pair } = ctx
   const sweep = view.recentSweeps.find((s) => s.reversed)
@@ -291,26 +390,32 @@ function detectSweepReversal(ctx: SetupContext): DetectedSetup[] {
   if (barsAgo < 0 || barsAgo > 6) return []
 
   const dir: Direction = sweep.type === 'low_sweep' ? 'long' : 'short'
-  const d = pair.digits
+  const dg = pair.digits
+  const f = (n: number) => n.toFixed(dg)
   const price = candles[candles.length - 1].close
-  const entry = round(price, d) // reversal confirmed — execute at market/near-touch
-  const stopLoss = round(dir === 'long' ? sweep.price - atr * 0.25 : sweep.price + atr * 0.25, d)
+  const entry = round(price, dg)
+  const stopLoss = round(dir === 'long' ? sweep.price - atr * 0.25 : sweep.price + atr * 0.25, dg)
   const risk = Math.abs(entry - stopLoss)
   if (risk <= 0 || risk > atr * 2) return []
 
   const targets = getTargetLiquidity(price, view.keyLevels, dir === 'long' ? 'bullish' : 'bearish')
-  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, d)
-  const tp2 = round(
-    targets[0] && Math.abs(targets[0].price - entry) > risk * 1.6
-      ? targets[0].price
-      : dir === 'long'
-        ? entry + risk * 2.5
-        : entry - risk * 2.5,
-    d
-  )
+  const tp1 = round(dir === 'long' ? entry + risk * 1.5 : entry - risk * 1.5, dg)
+  const useLiq = Boolean(targets[0] && Math.abs(targets[0].price - entry) > risk * 1.6)
+  const tp2 = round(useLiq ? targets[0].price : dir === 'long' ? entry + risk * 2.5 : entry - risk * 2.5, dg)
 
-  const counterTrend =
-    view.htfBias !== 'neutral' && (dir === 'long') !== (view.htfBias === 'bullish')
+  const counterTrend = view.htfBias !== 'neutral' && (dir === 'long') !== (view.htfBias === 'bullish')
+  const sign = dir === 'long' ? '+' : '−'
+  const derivations: LevelDerivation[] = [
+    d('entry', 'Entry', entry, 'close of confirmation bar (market)', `= ${f(entry)}`,
+      `The sweep of ${f(sweep.level.price)} already rejected (${sweep.pipsSwept.toFixed(1)}p through, closed back inside) — waiting for a pullback risks missing the reversal, so execution is at market`),
+    d('stopLoss', 'Stop', stopLoss, `sweepExtreme ${dir === 'long' ? '−' : '+'} 0.25 × ATR`, `${f(sweep.price)} ${dir === 'long' ? '−' : '+'} 0.25 × ${f(atr)} = ${f(stopLoss)}`,
+      'The sweep wick is the exact liquidity extreme; a second run through it voids the reversal, so only a quarter-ATR buffer is needed'),
+    d('takeProfit1', 'TP1', tp1, `entry ${sign} 1.5 × risk`, `${f(entry)} ${sign} 1.5 × ${f(risk)} = ${f(tp1)}`,
+      'Fixed 1.5R first objective'),
+    d('takeProfit2', 'TP2', tp2, useLiq ? 'opposing unswept liquidity level' : `entry ${sign} 2.5 × risk`,
+      useLiq ? `= ${f(tp2)} (${targets[0].type.replace(/_/g, ' ')})` : `${f(entry)} ${sign} 2.5 × ${f(risk)} = ${f(tp2)}`,
+      useLiq ? 'After a sweep, price typically rotates to the opposite liquidity pool' : 'No opposing pool ≥1.6R — fixed 2.5R measured target'),
+  ]
 
   return [
     {
@@ -322,36 +427,46 @@ function detectSweepReversal(ctx: SetupContext): DetectedSetup[] {
       takeProfit1: tp1,
       takeProfit2: tp2,
       quality: counterTrend ? 58 : 76,
+      qualityRule: `confirmed sweep base 76; counter-trend against 4H bias → −18 ⇒ ${counterTrend ? 58 : 76}${counterTrend ? '' : ' (aligned, no deduction)'}`,
+      derivations,
       rationale: [
-        `${sweep.type === 'low_sweep' ? 'Sell-side' : 'Buy-side'} liquidity swept at ${fmt(sweep.level.price, d)} (${sweep.pipsSwept.toFixed(1)} pips through the level) with confirmed rejection`,
-        `Stop tucked ${dir === 'long' ? 'below' : 'above'} the sweep extreme at ${fmt(sweep.price, d)}`,
-        counterTrend ? 'Counter to higher-timeframe bias — reduced quality, tighter management' : 'Sweep occurred in the direction of the higher-timeframe bias',
+        `${sweep.type === 'low_sweep' ? 'Sell-side' : 'Buy-side'} liquidity swept at ${f(sweep.level.price)} (${sweep.pipsSwept.toFixed(1)} pips through the level) with confirmed rejection`,
+        `Stop tucked ${dir === 'long' ? 'below' : 'above'} the sweep extreme at ${f(sweep.price)}`,
+        counterTrend
+          ? 'Counter to higher-timeframe bias — reduced quality, tighter management'
+          : 'Sweep occurred in the direction of the higher-timeframe bias',
       ],
-      invalidation: `A second sweep of ${fmt(sweep.price, d)} without reclaim means the level is being run — the reversal premise is dead.`,
+      invalidation: `A second sweep of ${f(sweep.price)} without reclaim means the level is being run — the reversal premise is dead.`,
     },
   ]
 }
 
+// ── Range fade ──
+// Only when HTF is neutral and regime is ranging/quiet.
+// entry = market at the extreme · stop = extreme ∓ 0.5×ATR
+// TP1 = 50% of range · TP2 = far 15% band
 function detectRangeFade(ctx: SetupContext): DetectedSetup[] {
   const { view, candles, atr, pair, regime } = ctx
   if (regime.tag !== 'ranging' && regime.tag !== 'quiet') return []
-  if (view.htfBias !== 'neutral') return [] // fade only structureless markets
+  if (view.htfBias !== 'neutral') return []
 
   const window = candles.slice(-48)
   const hi = Math.max(...window.map((c) => c.high))
   const lo = Math.min(...window.map((c) => c.low))
   const range = hi - lo
-  if (range < atr * 2.5) return [] // range too small to fade after costs
+  if (range < atr * 2.5) return []
 
   const price = candles[candles.length - 1].close
-  const pos = (price - lo) / range // 0 bottom … 1 top
-  const d = pair.digits
+  const pos = (price - lo) / range
+  const dg = pair.digits
+  const f = (n: number) => n.toFixed(dg)
+  const qualityRule = 'flat 60: range fades are lowest-conviction (no directional edge, mid-range magnetism only)'
 
   if (pos >= 0.88) {
-    const entry = round(price, d)
-    const stopLoss = round(hi + atr * 0.5, d)
-    const tp1 = round(lo + range * 0.5, d)
-    const tp2 = round(lo + range * 0.15, d)
+    const entry = round(price, dg)
+    const stopLoss = round(hi + atr * 0.5, dg)
+    const tp1 = round(lo + range * 0.5, dg)
+    const tp2 = round(lo + range * 0.15, dg)
     return [
       {
         type: 'range_fade',
@@ -362,19 +477,30 @@ function detectRangeFade(ctx: SetupContext): DetectedSetup[] {
         takeProfit1: tp1,
         takeProfit2: tp2,
         quality: 60,
+        qualityRule,
+        derivations: [
+          d('entry', 'Entry', entry, 'market at range extreme', `= ${f(entry)} (top ${Math.round((1 - pos) * 100)}% of range)`,
+            `Price is in the top 12% of the 48-bar range ${f(lo)}–${f(hi)} with no HTF bias — fade toward the mean`),
+          d('stopLoss', 'Stop', stopLoss, 'rangeHigh + 0.50 × ATR', `${f(hi)} + 0.50 × ${f(atr)} = ${f(stopLoss)}`,
+            'A half-ATR beyond the range high — past it the range premise becomes a breakout'),
+          d('takeProfit1', 'TP1', tp1, 'rangeLow + 0.50 × range', `${f(lo)} + 0.50 × ${f(range)} = ${f(tp1)}`,
+            'The range midpoint — the mean price gravitates to inside a range'),
+          d('takeProfit2', 'TP2', tp2, 'rangeLow + 0.15 × range', `${f(lo)} + 0.15 × ${f(range)} = ${f(tp2)}`,
+            'The far 15% band — full rotation target without demanding a perfect touch of the low'),
+        ],
         rationale: [
-          `No higher-timeframe bias; 48-bar range ${fmt(lo, d)}–${fmt(hi, d)} with price in the top ${Math.round((1 - pos) * 100)}%`,
+          `No higher-timeframe bias; 48-bar range ${f(lo)}–${f(hi)} with price in the top ${Math.round((1 - pos) * 100)}%`,
           'Fading the range extreme back toward the mid',
         ],
-        invalidation: `Two consecutive 15m closes above ${fmt(hi, d)} converts the range to a breakout — do not fade.`,
+        invalidation: `Two consecutive 15m closes above ${f(hi)} converts the range to a breakout — do not fade.`,
       },
     ]
   }
   if (pos <= 0.12) {
-    const entry = round(price, d)
-    const stopLoss = round(lo - atr * 0.5, d)
-    const tp1 = round(lo + range * 0.5, d)
-    const tp2 = round(lo + range * 0.85, d)
+    const entry = round(price, dg)
+    const stopLoss = round(lo - atr * 0.5, dg)
+    const tp1 = round(lo + range * 0.5, dg)
+    const tp2 = round(lo + range * 0.85, dg)
     return [
       {
         type: 'range_fade',
@@ -385,11 +511,22 @@ function detectRangeFade(ctx: SetupContext): DetectedSetup[] {
         takeProfit1: tp1,
         takeProfit2: tp2,
         quality: 60,
+        qualityRule,
+        derivations: [
+          d('entry', 'Entry', entry, 'market at range extreme', `= ${f(entry)} (bottom ${Math.round(pos * 100)}% of range)`,
+            `Price is in the bottom 12% of the 48-bar range ${f(lo)}–${f(hi)} with no HTF bias — fade toward the mean`),
+          d('stopLoss', 'Stop', stopLoss, 'rangeLow − 0.50 × ATR', `${f(lo)} − 0.50 × ${f(atr)} = ${f(stopLoss)}`,
+            'A half-ATR beyond the range low — past it the range premise becomes a breakdown'),
+          d('takeProfit1', 'TP1', tp1, 'rangeLow + 0.50 × range', `${f(lo)} + 0.50 × ${f(range)} = ${f(tp1)}`,
+            'The range midpoint — the mean price gravitates to inside a range'),
+          d('takeProfit2', 'TP2', tp2, 'rangeLow + 0.85 × range', `${f(lo)} + 0.85 × ${f(range)} = ${f(tp2)}`,
+            'The far 15% band — full rotation target without demanding a perfect touch of the high'),
+        ],
         rationale: [
-          `No higher-timeframe bias; 48-bar range ${fmt(lo, d)}–${fmt(hi, d)} with price in the bottom ${Math.round(pos * 100)}%`,
+          `No higher-timeframe bias; 48-bar range ${f(lo)}–${f(hi)} with price in the bottom ${Math.round(pos * 100)}%`,
           'Fading the range extreme back toward the mid',
         ],
-        invalidation: `Two consecutive 15m closes below ${fmt(lo, d)} converts the range to a breakdown — do not fade.`,
+        invalidation: `Two consecutive 15m closes below ${f(lo)} converts the range to a breakdown — do not fade.`,
       },
     ]
   }
@@ -400,10 +537,6 @@ function detectRangeFade(ctx: SetupContext): DetectedSetup[] {
 
 function round(n: number, digits: number): number {
   return parseFloat(n.toFixed(digits))
-}
-
-function fmt(n: number, digits: number): string {
-  return n.toFixed(digits)
 }
 
 function lastValid(series: number[]): number | undefined {

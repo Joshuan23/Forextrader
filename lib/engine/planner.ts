@@ -43,6 +43,14 @@ export function buildTradePlan(
   const positionSizeLots =
     riskPips > 0 && pipValue > 0 ? round2(riskUsd / (riskPips * pipValue)) : 0
 
+  const rrComputation =
+    `cost = spread ${execution.spreadPips.toFixed(1)}p + slippage ${execution.slippage.avgPips.toFixed(2)}p = ${cost.toFixed(2)}p; ` +
+    `RR(TP1) = (${rewardPipsTp1.toFixed(1)}p − ${cost.toFixed(2)}p) / (${riskPips.toFixed(1)}p + ${cost.toFixed(2)}p) = ${rrTp1}; ` +
+    `RR(TP2) = (${rewardPipsTp2.toFixed(1)}p − ${cost.toFixed(2)}p) / (${riskPips.toFixed(1)}p + ${cost.toFixed(2)}p) = ${riskReward}`
+  const sizingComputation =
+    `risk = ${settings.riskPerTradePct}% × ${usd(settings.accountSize)} = ${usd(riskUsd)}; ` +
+    `lots = ${usd(riskUsd)} / (${riskPips.toFixed(1)}p × $${pipValue.toFixed(2)}/pip/lot) = ${positionSizeLots}`
+
   const invalidationLogic = [
     setup.invalidation,
     `Skip if the spread widens above ${execution.maxAllowedSpreadPips.toFixed(1)}p before the fill.`,
@@ -78,6 +86,8 @@ export function buildTradePlan(
     invalidationLogic,
     managementPlan,
     checklist,
+    rrComputation,
+    sizingComputation,
   }
 }
 
