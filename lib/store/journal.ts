@@ -125,7 +125,7 @@ export async function listJournalEntries(): Promise<JournalRecord[]> {
       include: { pair: { select: { symbol: true } } },
       orderBy: { createdAt: 'desc' },
     })
-    return rows.map((r) => ({
+    return rows.map((r: typeof rows[number]) => ({
       id: r.id,
       symbol: r.pair.symbol,
       direction: r.direction as Direction,

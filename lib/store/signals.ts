@@ -105,13 +105,13 @@ export async function listStoredSignals(limit = 50): Promise<EngineSignal[]> {
       take: limit,
     })
     return rows
-      .map((r): EngineSignal | null => {
+      .map((r: typeof rows[number]): EngineSignal | null => {
         const payload = r.layerScores as { full?: EngineSignal } | null
         const full = payload?.full
         if (!full) return null
         return { ...full, lifecycle: r.status as SignalLifecycle }
       })
-      .filter((s): s is EngineSignal => s !== null)
+      .filter((s: EngineSignal | null): s is EngineSignal => s !== null)
   }
   return memory().slice(0, limit)
 }
