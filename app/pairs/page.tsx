@@ -1,19 +1,33 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { GradeBadge } from '@/components/flowedge/badges'
 import { scanMarket } from '@/lib/engine'
-import { REGIME_LABELS } from '@/lib/engine/types'
+import { REGIME_LABELS, type PairEvaluation } from '@/lib/engine/types'
 import { getSettings } from '@/lib/store/settings'
 import { listJournalEntries } from '@/lib/store/journal'
 import { cn } from '@/lib/utils'
 
-export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Pairs' }
+export default function PairsPage() {
+  const [evals, setEvals] = useState<PairEvaluation[] | null>(null)
 
-export default async function PairsPage() {
-  const [settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
-  const evals = await scanMarket(settings, journal)
+  useEffect(() => {
+    Promise.all([getSettings(), listJournalEntries()]).then(async ([settings, journal]) => {
+      const scanned = await scanMarket(settings, journal)
+      setEvals(scanned)
+    })
+  }, [])
+
+  if (!evals) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">

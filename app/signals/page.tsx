@@ -1,26 +1,40 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { SignalsList } from '@/components/flowedge/signals-list'
 import { TvInbox } from '@/components/flowedge/tv-inbox'
 import { scanMarket } from '@/lib/engine'
 import { getSettings } from '@/lib/store/settings'
 import { listJournalEntries } from '@/lib/store/journal'
 import { listStoredSignals } from '@/lib/store/signals'
+import type { EngineSignal } from '@/lib/engine/types'
 
-export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Signals' }
+export default function SignalsPage() {
+  const [data, setData] = useState<{
+    signals: EngineSignal[]
+    tvSignals: EngineSignal[]
+  } | null>(null)
 
-export default async function SignalsPage() {
-  const [settings, journal, tvSignals] = await Promise.all([
-    getSettings(),
-    listJournalEntries(),
-    listStoredSignals(20),
-  ])
-  const evals = await scanMarket(settings, journal)
+  useEffect(() => {
+    Promise.all([getSettings(), listJournalEntries(), listStoredSignals(20)]).then(async ([settings, journal, tvSignals]) => {
+      const evals = await scanMarket(settings, journal)
+      const signals = [
+        ...evals.flatMap((e) => e.signals).sort((a, b) => b.confidence - a.confidence),
+        ...evals.flatMap((e) => e.blocked).sort((a, b) => b.confidence - a.confidence),
+      ]
+      setData({ signals, tvSignals })
+    })
+  }, [])
 
-  // Approved first (by confidence), then blocked — the full decision log.
-  const signals = [
-    ...evals.flatMap((e) => e.signals).sort((a, b) => b.confidence - a.confidence),
-    ...evals.flatMap((e) => e.blocked).sort((a, b) => b.confidence - a.confidence),
-  ]
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  const { signals, tvSignals } = data
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">

@@ -1,3 +1,6 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,12 +15,27 @@ import { SETUP_LABELS, SESSION_LABELS } from '@/lib/engine/types'
 import { listJournalEntries } from '@/lib/store/journal'
 import { getSettings } from '@/lib/store/settings'
 import { cn } from '@/lib/utils'
+import type { JournalRecord } from '@/lib/engine/expectancy'
+import type { FlowEdgeSettings } from '@/lib/engine/types'
 
-export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Journal' }
+export default function JournalPage() {
+  const [data, setData] = useState<{ entries: JournalRecord[]; settings: FlowEdgeSettings } | null>(null)
 
-export default async function JournalPage() {
-  const [entries, settings] = await Promise.all([listJournalEntries(), getSettings()])
+  useEffect(() => {
+    Promise.all([listJournalEntries(), getSettings()]).then(([entries, settings]) => {
+      setData({ entries, settings })
+    })
+  }, [])
+
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  const { entries, settings } = data
   const stats = computeExpectancy(entries)
   const stayOut = stayOutQuality(entries)
 
@@ -116,16 +134,13 @@ export default async function JournalPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <form
-                      action={async () => {
-                        'use server'
-                        await removeJournalEntry(e.id)
-                      }}
+                    <button
+                      onClick={() => removeJournalEntry(e.id)}
+                      className="text-muted-foreground transition-colors hover:text-destructive"
+                      aria-label="Delete entry"
                     >
-                      <button className="text-muted-foreground transition-colors hover:text-destructive" aria-label="Delete entry">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </form>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}

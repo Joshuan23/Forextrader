@@ -1,3 +1,6 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, CalendarClock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,14 +16,31 @@ import { getSettings } from '@/lib/store/settings'
 import { listJournalEntries } from '@/lib/store/journal'
 import { cn } from '@/lib/utils'
 
-export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Dashboard' }
+export default function DashboardPage() {
+  const [data, setData] = useState<{
+    evals: PairEvaluation[]
+    session: ReturnType<typeof getSessionInfo>
+    profile: ReturnType<typeof getProfile>
+  } | null>(null)
 
-export default async function DashboardPage() {
-  const [settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
-  const evals = await scanMarket(settings, journal)
-  const session = getSessionInfo()
-  const profile = getProfile(settings.activeProfileId)
+  useEffect(() => {
+    Promise.all([getSettings(), listJournalEntries()]).then(async ([settings, journal]) => {
+      const evals = await scanMarket(settings, journal)
+      const session = getSessionInfo()
+      const profile = getProfile(settings.activeProfileId)
+      setData({ evals, session, profile })
+    })
+  }, [])
+
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  const { evals, session, profile } = data
 
   const approved = evals.flatMap((e) => e.signals).sort((a, b) => b.confidence - a.confidence)
   const blocked = evals.flatMap((e) => e.blocked)

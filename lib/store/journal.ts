@@ -1,4 +1,3 @@
-import { getDb } from '@/lib/db'
 import { getPairBySymbol, CURRENCY_PAIRS } from '@/lib/forex/pairs'
 import type { JournalRecord } from '@/lib/engine/expectancy'
 import { MISTAKE_TAGS, type Direction, type Grade, type RegimeTag, type SessionTag, type SetupType } from '@/lib/engine/types'
@@ -6,6 +5,7 @@ import { MISTAKE_TAGS, type Direction, type Grade, type RegimeTag, type SessionT
 // Journal store — Prisma-backed when DATABASE_URL is set; otherwise a
 // seeded in-memory book of realistic history so the journal, analytics
 // and expectancy views are meaningful in local development.
+// Safely defers database access to avoid bundle issues in browser builds.
 
 const globalStore = globalThis as unknown as { flowedgeJournal?: JournalRecord[] }
 
@@ -106,7 +106,20 @@ function memoryStore(): JournalRecord[] {
 // ─── Public API ──────────────────────────────────────────────────────
 
 export async function listJournalEntries(): Promise<JournalRecord[]> {
-  const db = getDb()
+  // In browser or build environment, return seeded memory store
+  if (typeof window !== 'undefined') {
+    return memoryStore()
+  }
+
+  // Only try database access on server side
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     const rows = await db.journalEntry.findMany({
       include: { pair: { select: { symbol: true } } },
@@ -138,7 +151,14 @@ export async function listJournalEntries(): Promise<JournalRecord[]> {
 export type NewJournalEntry = Omit<JournalRecord, 'id' | 'createdAt'>
 
 export async function addJournalEntry(entry: NewJournalEntry): Promise<JournalRecord> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     const pairRow = await ensurePair(entry.symbol)
     const row = await db.journalEntry.create({
@@ -171,7 +191,14 @@ export async function addJournalEntry(entry: NewJournalEntry): Promise<JournalRe
 }
 
 export async function deleteJournalEntry(id: string): Promise<void> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     await db.journalEntry.delete({ where: { id } }).catch(() => undefined)
     return
@@ -182,7 +209,9 @@ export async function deleteJournalEntry(id: string): Promise<void> {
 }
 
 async function ensurePair(symbol: string) {
-  const db = getDb()!
+  const { getDb } = await import('@/lib/db')
+  const db = getDb()
+  if (!db) throw new Error('Database not available')
   const cfg = CURRENCY_PAIRS.find((p) => p.symbol === symbol)
   return db.pair.upsert({
     where: { symbol },

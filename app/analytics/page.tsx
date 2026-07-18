@@ -1,3 +1,6 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -14,42 +17,91 @@ import {
 import { SETUP_LABELS, SESSION_LABELS, type SessionTag, type SetupType } from '@/lib/engine/types'
 import { listJournalEntries } from '@/lib/store/journal'
 import { cn } from '@/lib/utils'
+import type { JournalRecord } from '@/lib/engine/expectancy'
 
-export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Analytics' }
+interface AnalyticsData {
+  entries: JournalRecord[]
+  overall: any
+  byPair: any[]
+  bySetup: any[]
+  bySession: any[]
+  byGrade: any[]
+  stayOut: any
+  curve: any[]
+  costsByPair: any[]
+  costsBySession: any[]
+  winRateRows: any[]
+  best: any
+  worst: any
+  bestSession: any
+  worstSession: any
+}
 
-export default async function AnalyticsPage() {
-  const entries = await listJournalEntries()
-  const overall = computeExpectancy(entries)
-  const byPair = groupExpectancy(entries, (e) => e.symbol)
-  const bySetup = groupExpectancy(
-    entries,
-    (e) => e.setupType,
-    (k) => SETUP_LABELS[k as SetupType] ?? k
-  )
-  const bySession = groupExpectancy(
-    entries,
-    (e) => e.sessionTag,
-    (k) => SESSION_LABELS[k as SessionTag] ?? k
-  )
-  const byGrade = groupExpectancy(entries, (e) => e.grade, (k) => `Grade ${k}`)
-  const stayOut = stayOutQuality(entries)
-  const curve = equityCurveR(entries)
-  const costsByPair = costAnalysis(entries, (e) => e.symbol)
-  const costsBySession = costAnalysis(entries, (e) => SESSION_LABELS[e.sessionTag])
+export default function AnalyticsPage() {
+  const [data, setData] = useState<AnalyticsData | null>(null)
 
-  const winRateRows = byPair.map((g) => ({
-    key: g.key,
-    label: g.label,
-    value: g.winRate,
-    display: `${(g.winRate * 100).toFixed(0)}%`,
-    sub: `n=${g.trades}`,
-  }))
+  useEffect(() => {
+    listJournalEntries().then((entries) => {
+      const overall = computeExpectancy(entries)
+      const byPair = groupExpectancy(entries, (e) => e.symbol)
+      const bySetup = groupExpectancy(
+        entries,
+        (e) => e.setupType,
+        (k) => SETUP_LABELS[k as SetupType] ?? k
+      )
+      const bySession = groupExpectancy(
+        entries,
+        (e) => e.sessionTag,
+        (k) => SESSION_LABELS[k as SessionTag] ?? k
+      )
+      const byGrade = groupExpectancy(entries, (e) => e.grade, (k) => `Grade ${k}`)
+      const stayOut = stayOutQuality(entries)
+      const curve = equityCurveR(entries)
+      const costsByPair = costAnalysis(entries, (e) => e.symbol)
+      const costsBySession = costAnalysis(entries, (e) => SESSION_LABELS[e.sessionTag])
 
-  const best = byPair[0]
-  const worst = byPair[byPair.length - 1]
-  const bestSession = bySession[0]
-  const worstSession = bySession[bySession.length - 1]
+      const winRateRows = byPair.map((g: any) => ({
+        key: g.key,
+        label: g.label,
+        value: g.winRate,
+        display: `${(g.winRate * 100).toFixed(0)}%`,
+        sub: `n=${g.trades}`,
+      }))
+
+      const best = byPair[0]
+      const worst = byPair[byPair.length - 1]
+      const bestSession = bySession[0]
+      const worstSession = bySession[bySession.length - 1]
+
+      setData({
+        entries,
+        overall,
+        byPair,
+        bySetup,
+        bySession,
+        byGrade,
+        stayOut,
+        curve,
+        costsByPair,
+        costsBySession,
+        winRateRows,
+        best,
+        worst,
+        bestSession,
+        worstSession,
+      })
+    })
+  }, [])
+
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  const { overall, byPair, bySetup, bySession, byGrade, stayOut, curve, costsByPair, costsBySession, winRateRows, best, worst, bestSession, worstSession } = data
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">

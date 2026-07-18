@@ -1,4 +1,3 @@
-import { getDb } from '@/lib/db'
 import { CURRENCY_PAIRS } from '@/lib/forex/pairs'
 import type { EngineSignal, SignalLifecycle } from '@/lib/engine/types'
 
@@ -6,6 +5,7 @@ import type { EngineSignal, SignalLifecycle } from '@/lib/engine/types'
 // user pins). Prisma-backed with DATABASE_URL; in-memory ring otherwise.
 // The full EngineSignal (incl. derivations/layer scores) is kept so cards
 // render identically for stored and freshly-scanned signals.
+// Safely defers database access to avoid bundle issues in browser builds.
 
 const MAX_MEMORY = 200
 const globalStore = globalThis as unknown as { flowedgeSignals?: EngineSignal[] }
@@ -16,7 +16,14 @@ function memory(): EngineSignal[] {
 }
 
 export async function saveSignal(signal: EngineSignal): Promise<EngineSignal> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     const pairRow = await ensurePair(signal.symbol)
     await db.signal.upsert({
@@ -83,7 +90,14 @@ export async function saveSignal(signal: EngineSignal): Promise<EngineSignal> {
 }
 
 export async function listStoredSignals(limit = 50): Promise<EngineSignal[]> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     const rows = await db.signal.findMany({
       where: { source: 'tradingview' },
@@ -106,7 +120,14 @@ export async function resolveSignal(
   id: string,
   outcome: SignalLifecycle
 ): Promise<EngineSignal | null> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     const dbStatus = outcome === 'cancelled' ? 'invalid' : outcome
     const row = await db.signal
@@ -124,7 +145,9 @@ export async function resolveSignal(
 }
 
 async function ensurePair(symbol: string) {
-  const db = getDb()!
+  const { getDb } = await import('@/lib/db')
+  const db = getDb()
+  if (!db) throw new Error('Database not available')
   const cfg = CURRENCY_PAIRS.find((p) => p.symbol === symbol)
   return db.pair.upsert({
     where: { symbol },

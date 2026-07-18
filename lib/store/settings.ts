@@ -1,15 +1,21 @@
-import { getDb } from '@/lib/db'
 import { DEFAULT_SETTINGS } from '@/lib/engine/config'
 import type { FlowEdgeSettings } from '@/lib/engine/types'
 
 // Settings store — Prisma-backed when DATABASE_URL is set, otherwise an
 // in-process singleton (survives the dev server session; resets on restart).
+// Client components get defaults; server components can fetch from DB if configured.
 
 const globalStore = globalThis as unknown as { flowedgeSettings?: FlowEdgeSettings }
 
-export async function getSettings(): Promise<FlowEdgeSettings> {
-  const db = getDb()
-  if (db) {
+// Check if we're in browser context - if so, never try to import db.ts
+const isClient = typeof window !== 'undefined' || typeof process === 'undefined'
+
+async function getDbSettings(): Promise<FlowEdgeSettings | null> {
+  try {
+    const { getDb } = await import('@/lib/db')
+    const db = getDb()
+    if (!db) return null
+
     const row = await db.userSettings.findUnique({ where: { id: 'default' } })
     if (row) {
       return {
@@ -32,13 +38,34 @@ export async function getSettings(): Promise<FlowEdgeSettings> {
         brokerAssumptions: row.brokerAssumptions as unknown as FlowEdgeSettings['brokerAssumptions'],
       }
     }
-    return DEFAULT_SETTINGS
+  } catch {
+    // Database not available or error reading
   }
+  return null
+}
+
+export async function getSettings(): Promise<FlowEdgeSettings> {
+  // Client-side or build time: return in-memory store or defaults
+  if (isClient) {
+    return globalStore.flowedgeSettings ?? DEFAULT_SETTINGS
+  }
+
+  // Server-side: try database first, fall back to in-memory
+  const dbSettings = await getDbSettings()
+  if (dbSettings) return dbSettings
+
   return globalStore.flowedgeSettings ?? DEFAULT_SETTINGS
 }
 
 export async function saveSettings(next: FlowEdgeSettings): Promise<void> {
-  const db = getDb()
+  let db = null
+  try {
+    const { getDb } = await import('@/lib/db')
+    db = getDb()
+  } catch {
+    // Ignore errors during build or in browser context
+  }
+
   if (db) {
     await db.userSettings.upsert({
       where: { id: 'default' },
