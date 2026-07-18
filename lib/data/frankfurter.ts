@@ -24,7 +24,7 @@ export async function fetchFrankfurterRate(pair: string): Promise<number | null>
   try {
     const res = await fetch(
       `https://api.frankfurter.app/latest?from=${base}&to=${quote}`,
-      { next: { revalidate: 300 } },   // ECB updates once daily; 5-min cache is plenty
+      { next: { revalidate: 300 }, signal: AbortSignal.timeout(5000) },   // ECB updates once daily; 5-min cache is plenty
     )
     if (!res.ok) return null
     const data = await res.json()
@@ -49,7 +49,7 @@ export async function fetchFrankfurterHistory(
     const end   = new Date().toISOString().split('T')[0]
     const res = await fetch(
       `https://api.frankfurter.app/${start}..${end}?from=${base}&to=${quote}`,
-      { next: { revalidate: 3600 } },
+      { next: { revalidate: 3600 }, signal: AbortSignal.timeout(5000) },
     )
     if (!res.ok) return []
     const data = await res.json()

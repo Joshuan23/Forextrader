@@ -64,6 +64,7 @@ async function yfFetch(ticker: string, params: YfParams): Promise<Response> {
       'Referer':         'https://finance.yahoo.com/',
     },
     next: { revalidate: 60 },
+    signal: AbortSignal.timeout(5000),
   })
 }
 
