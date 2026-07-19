@@ -1,6 +1,7 @@
 import type { Candle, Timeframe } from '@/types/forex'
 import { isConfigured, fetchCandles as avFetch, fetchLiveRate as avLiveRate } from './alphavantage'
 import { isConfigured as tdConfigured, fetchCandles as tdFetch, fetchLiveRate as tdLiveRate } from './twelvedata'
+import { isConfigured as oandaConfigured, fetchCandles as oandaFetch, fetchLiveRate as oandaLiveRate } from './oanda'
 import { fetchYahooCandles, fetchYahooLiveRate } from './yahoo'
 import { fetchFrankfurterRate, franklinSupports } from './frankfurter'
 import { generateCandles, generateAnchoredCandles, getLivePrice } from '@/lib/forex/data'
@@ -16,8 +17,8 @@ function simulationAllowed(): boolean {
 async function failNoLiveData(pair: string): Promise<never> {
   const { SetupError } = await import('@/lib/config/runtime')
   throw new SetupError(
-    `Live market data unavailable for ${pair}. Yahoo Finance is unreachable from this host and no market-data API key is configured. ` +
-      'Set TWELVE_DATA_API_KEY (free 800 req/day: twelvedata.com) or ALPHA_VANTAGE_API_KEY (alphavantage.co), or set DEVELOPMENT_DEMO_MODE=true for simulated data.'
+    `Live market data unavailable for ${pair}. Yahoo Finance is unreachable from this host and no market-data provider is configured. ` +
+      'Set OANDA_API_TOKEN (free practice account, no daily cap: oanda.com), TWELVE_DATA_API_KEY (free 800 req/day: twelvedata.com), or ALPHA_VANTAGE_API_KEY — or set DEVELOPMENT_DEMO_MODE=true for simulated data.'
   )
 }
 
@@ -26,13 +27,21 @@ export async function getCandles(
   timeframe: Timeframe,
   count: number
 ): Promise<{ candles: Candle[]; source: 'live' | 'simulated' }> {
-  // 1. Yahoo Finance — real OHLCV (may be blocked from some cloud IPs)
+  // 1. OANDA — real broker OHLCV, no daily cap (practice/live token)
+  if (oandaConfigured()) {
+    const candles = await oandaFetch(pair, timeframe, count)
+    if (candles.length > 0) {
+      return { candles, source: 'live' }
+    }
+  }
+
+  // 2. Yahoo Finance — real OHLCV (may be blocked from some cloud IPs)
   const yfCandles = await fetchYahooCandles(pair, timeframe, count)
   if (yfCandles.length > 0) {
     return { candles: yfCandles, source: 'live' }
   }
 
-  // 2. Twelve Data — real OHLCV, cloud-friendly (free 800 req/day, 8/min)
+  // 3. Twelve Data — real OHLCV, cloud-friendly (free 800 req/day, 8/min)
   if (tdConfigured()) {
     const candles = await tdFetch(pair, timeframe, count)
     if (candles.length > 0) {
@@ -71,14 +80,23 @@ export async function getLiveRates(
   const result: Record<string, { bid: number; ask: number; mid: number; source: 'live' | 'simulated' }> = {}
 
   for (const pair of pairs) {
-    // 1. Yahoo Finance live rate
+    // 1. OANDA live price — real broker feed, no daily cap
+    if (oandaConfigured()) {
+      const oandaRate = await oandaLiveRate(pair)
+      if (oandaRate) {
+        result[pair] = { ...oandaRate, source: 'live' }
+        continue
+      }
+    }
+
+    // 2. Yahoo Finance live rate
     const yfRate = await fetchYahooLiveRate(pair)
     if (yfRate) {
       result[pair] = { ...yfRate, source: 'live' }
       continue
     }
 
-    // 2. Twelve Data live price — real, cloud-friendly
+    // 3. Twelve Data live price — real, cloud-friendly
     if (tdConfigured()) {
       const tdRate = await tdLiveRate(pair)
       if (tdRate) {
