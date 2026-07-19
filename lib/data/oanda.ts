@@ -58,13 +58,24 @@ async function oandaGet(path: string): Promise<Response> {
   })
 }
 
+interface OhlcStrings {
+  o: string
+  h: string
+  l: string
+  c: string
+}
 interface OandaCandle {
   complete: boolean
   volume: number
   time: string // epoch seconds (UNIX format), e.g. "1704110400.000000000"
-  mid?: { o: string; h: string; l: string; c: string }
+  mid?: OhlcStrings
+  bid?: OhlcStrings
+  ask?: OhlcStrings
 }
 
+// Candle OHLC uses the BID price to match MetaTrader / TradingView charts,
+// which are drawn from bid. (OANDA can return bid/ask/mid; retail charts
+// are bid, so signal levels line up with what the user sees on MT.)
 export async function fetchCandles(
   pair: string,
   timeframe: Timeframe,
@@ -76,7 +87,7 @@ export async function fetchCandles(
     const size = Math.min(Math.max(count, 1), 5000)
     const path =
       `/v3/instruments/${toInstrument(pair)}/candles` +
-      `?granularity=${toGranularity(timeframe)}&count=${size}&price=M`
+      `?granularity=${toGranularity(timeframe)}&count=${size}&price=B`
     const res = await oandaGet(path)
     if (!res.ok) return []
 
@@ -84,16 +95,19 @@ export async function fetchCandles(
     if (!Array.isArray(data.candles)) return []
 
     const candles: Candle[] = data.candles
-      .filter((c) => c.mid)
-      .map((c) => ({
-        time: Math.round(parseFloat(c.time) * 1000),
-        open: parseFloat(c.mid!.o),
-        high: parseFloat(c.mid!.h),
-        low: parseFloat(c.mid!.l),
-        close: parseFloat(c.mid!.c),
-        volume: c.volume ?? 0,
-      }))
-      .filter((c) => isFinite(c.time) && isFinite(c.open) && isFinite(c.close))
+      .map((c): Candle | null => {
+        const o = c.bid ?? c.mid
+        if (!o) return null
+        return {
+          time: Math.round(parseFloat(c.time) * 1000),
+          open: parseFloat(o.o),
+          high: parseFloat(o.h),
+          low: parseFloat(o.l),
+          close: parseFloat(o.c),
+          volume: c.volume ?? 0,
+        }
+      })
+      .filter((c): c is Candle => c !== null && isFinite(c.time) && isFinite(c.open) && isFinite(c.close))
       .sort((a, b) => a.time - b.time)
 
     return candles.slice(-count)
@@ -108,26 +122,26 @@ export async function fetchLiveRate(
   if (!isConfigured()) return null
 
   try {
-    // Latest M1 candle (incomplete = current forming bar) gives the live mid,
-    // avoiding the need for an account id on the pricing endpoint.
+    // Latest M1 candle (incomplete = current forming bar) with both bid and
+    // ask gives a real live quote and real spread — no account id needed.
     const path =
-      `/v3/instruments/${toInstrument(pair)}/candles?granularity=M1&count=1&price=M`
+      `/v3/instruments/${toInstrument(pair)}/candles?granularity=M1&count=1&price=BA`
     const res = await oandaGet(path)
     if (!res.ok) return null
 
     const data = (await res.json()) as { candles?: OandaCandle[] }
     const last = data.candles?.[data.candles.length - 1]
-    if (!last?.mid) return null
+    if (!last?.bid || !last?.ask) return null
 
     const pairConfig = CURRENCY_PAIRS.find((p) => p.symbol === pair)
     const digits = pairConfig?.digits ?? 5
-    const mid = parseFloat(parseFloat(last.mid.c).toFixed(digits))
-    if (!isFinite(mid) || mid <= 0) return null
+    const round = (n: number) => parseFloat(n.toFixed(digits))
+    const bid = round(parseFloat(last.bid.c))
+    const ask = round(parseFloat(last.ask.c))
+    if (!isFinite(bid) || !isFinite(ask) || bid <= 0) return null
 
-    const halfSpread = pairConfig
-      ? (pairConfig.spread * pairConfig.pipSize) / 2
-      : mid * 0.00005
-    return { bid: mid - halfSpread, ask: mid + halfSpread, mid }
+    // Mid is the true midpoint; bid matches what MetaTrader charts display.
+    return { bid, ask, mid: round((bid + ask) / 2) }
   } catch {
     return null
   }
