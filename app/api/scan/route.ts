@@ -11,46 +11,47 @@ export const dynamic = 'force-dynamic'
 // scores, derivations) — the web pages' data source, so the engine and
 // stores run ONLY on the server against real data.
 export async function GET(req: NextRequest) {
-  let settings, journal
   try {
-    ;[settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+    const [settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+    const evals = await scanMarket(settings, journal)
+
+    if (req.nextUrl.searchParams.get('full') === '1') {
+      return NextResponse.json({
+        scannedAt: new Date().toISOString(),
+        session: getSessionInfo(),
+        profile: getProfile(settings.activeProfileId),
+        settings,
+        evals,
+      })
+    }
+
+    return NextResponse.json({
+      scannedAt: new Date().toISOString(),
+      profile: settings.activeProfileId,
+      pairs: evals.map((e) => ({
+        symbol: e.symbol,
+        price: e.price,
+        changePct: e.changePct,
+        rankScore: e.rankScore,
+        regime: e.regime.tag,
+        session: e.session.tag,
+        eventRisk: e.eventRisk.level,
+        dataSource: e.dataSource,
+        signals: e.signals,
+        blocked: e.blocked.map((b) => ({
+          id: b.id,
+          symbol: b.symbol,
+          direction: b.direction,
+          setupType: b.setupType,
+          confidence: b.confidence,
+          blockReasons: b.blockReasons,
+        })),
+      })),
+    })
   } catch (e) {
+    // Market-data outages (Yahoo blocked, no Alpha Vantage key) surface as
+    // a SetupError → clean 503 with remediation text, never a raw 500.
     const { body, status } = errorResponse(e)
     return NextResponse.json(body, { status })
   }
-  const evals = await scanMarket(settings, journal)
-
-  if (req.nextUrl.searchParams.get('full') === '1') {
-    return NextResponse.json({
-      scannedAt: new Date().toISOString(),
-      session: getSessionInfo(),
-      profile: getProfile(settings.activeProfileId),
-      settings,
-      evals,
-    })
-  }
-
-  return NextResponse.json({
-    scannedAt: new Date().toISOString(),
-    profile: settings.activeProfileId,
-    pairs: evals.map((e) => ({
-      symbol: e.symbol,
-      price: e.price,
-      changePct: e.changePct,
-      rankScore: e.rankScore,
-      regime: e.regime.tag,
-      session: e.session.tag,
-      eventRisk: e.eventRisk.level,
-      dataSource: e.dataSource,
-      signals: e.signals,
-      blocked: e.blocked.map((b) => ({
-        id: b.id,
-        symbol: b.symbol,
-        direction: b.direction,
-        setupType: b.setupType,
-        confidence: b.confidence,
-        blockReasons: b.blockReasons,
-      })),
-    })),
-  })
 }
