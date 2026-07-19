@@ -1,0 +1,24 @@
+name: Scheduled market scan
+
+# Runs the FlowEdge engine on a schedule so signals are generated, persisted,
+# and pushed even when nobody has the app open. Calls the deployed
+# /api/cron/scan endpoint with the shared CRON_SECRET.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://forextrader-d3m6.vercel.app  (no trailing slash)
+#   CRON_SECRET  the same value set as CRON_SECRET in Vercel env vars
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # every 15 minutes (UTC)
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger market scan
+        run: |
+          curl -fsS -X GET "${{ secrets.APP_URL }}/api/cron/scan" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 90
