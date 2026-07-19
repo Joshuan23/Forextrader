@@ -1,5 +1,6 @@
 import type { Candle, Timeframe } from '@/types/forex'
 import { isConfigured, fetchCandles as avFetch, fetchLiveRate as avLiveRate } from './alphavantage'
+import { isConfigured as tdConfigured, fetchCandles as tdFetch, fetchLiveRate as tdLiveRate } from './twelvedata'
 import { fetchYahooCandles, fetchYahooLiveRate } from './yahoo'
 import { fetchFrankfurterRate, franklinSupports } from './frankfurter'
 import { generateCandles, generateAnchoredCandles, getLivePrice } from '@/lib/forex/data'
@@ -15,8 +16,8 @@ function simulationAllowed(): boolean {
 async function failNoLiveData(pair: string): Promise<never> {
   const { SetupError } = await import('@/lib/config/runtime')
   throw new SetupError(
-    `Live market data unavailable for ${pair}. Yahoo Finance is unreachable from this host and no ALPHA_VANTAGE_API_KEY is configured. ` +
-      'Set ALPHA_VANTAGE_API_KEY (free key: alphavantage.co) or another candle provider, or set DEVELOPMENT_DEMO_MODE=true for simulated data.'
+    `Live market data unavailable for ${pair}. Yahoo Finance is unreachable from this host and no market-data API key is configured. ` +
+      'Set TWELVE_DATA_API_KEY (free 800 req/day: twelvedata.com) or ALPHA_VANTAGE_API_KEY (alphavantage.co), or set DEVELOPMENT_DEMO_MODE=true for simulated data.'
   )
 }
 
@@ -31,7 +32,15 @@ export async function getCandles(
     return { candles: yfCandles, source: 'live' }
   }
 
-  // 2. Alpha Vantage — if API key is configured
+  // 2. Twelve Data — real OHLCV, cloud-friendly (free 800 req/day, 8/min)
+  if (tdConfigured()) {
+    const candles = await tdFetch(pair, timeframe, count)
+    if (candles.length > 0) {
+      return { candles, source: 'live' }
+    }
+  }
+
+  // 3. Alpha Vantage — if API key is configured
   if (isConfigured()) {
     const candles = await avFetch(pair, timeframe, count)
     if (candles.length > 0) {
@@ -69,7 +78,16 @@ export async function getLiveRates(
       continue
     }
 
-    // 2. Frankfurter (FX pairs only, ECB-backed, fully reliable)
+    // 2. Twelve Data live price — real, cloud-friendly
+    if (tdConfigured()) {
+      const tdRate = await tdLiveRate(pair)
+      if (tdRate) {
+        result[pair] = { ...tdRate, source: 'live' }
+        continue
+      }
+    }
+
+    // 3. Frankfurter (FX pairs only, ECB-backed, fully reliable)
     if (franklinSupports(pair)) {
       const mid = await fetchFrankfurterRate(pair)
       if (mid) {
