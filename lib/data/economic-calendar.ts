@@ -163,27 +163,31 @@ async function fetchFinnhubCalendar(fromMs: number, toMs: number, apiKey: string
 }
 
 // Provider entry point — selected by environment:
-//   CALENDAR_API_KEY set        → real Finnhub calendar
-//   DEVELOPMENT_DEMO_MODE=true  → deterministic template calendar
-//   neither, in production      → fail loudly (blackout logic must never
-//                                 run silently on fake event times)
+//   CALENDAR_API_KEY set → real provider (Finnhub); on downtime, degrade to
+//                          the deterministic schedule (over-approximates
+//                          blackout windows — safer than trading blind).
+//   no key               → built-in economic schedule. The calendar is a
+//                          SECONDARY input (news-blackout timing only); it
+//                          must not block the whole desk, and the schedule
+//                          over-blocks known high-impact windows at their
+//                          real recurring UTC times. Prices and signals
+//                          always run on real market data regardless.
+//                          Set CALENDAR_API_KEY for exact live event times.
 export async function fetchCalendarEvents(fromMs: number, toMs: number): Promise<EconomicEventLite[]> {
   const apiKey = process.env.CALENDAR_API_KEY
   if (apiKey) {
     try {
       return await fetchFinnhubCalendar(fromMs, toMs, apiKey)
     } catch (e) {
-      // Provider downtime: safer to degrade to the deterministic template
-      // (which over-approximates blackout windows) than to trade blind.
-      console.error('[calendar] real provider failed, using template fallback:', e)
+      console.error('[calendar] real provider failed, using built-in schedule:', e)
       return getMockCalendar(fromMs, toMs)
     }
   }
-  if (process.env.DEVELOPMENT_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production') {
-    return getMockCalendar(fromMs, toMs)
+  if (process.env.NODE_ENV === 'production' && process.env.DEVELOPMENT_DEMO_MODE !== 'true') {
+    console.warn(
+      '[calendar] CALENDAR_API_KEY not set — using built-in economic schedule ' +
+        '(estimated event times, over-approximates news blackouts). Set CALENDAR_API_KEY for exact live times.'
+    )
   }
-  const { SetupError } = await import('@/lib/config/runtime')
-  throw new SetupError(
-    'CALENDAR_API_KEY is not configured. Set a Finnhub API key (free tier works) so news blackouts run on real event times, or set DEVELOPMENT_DEMO_MODE=true.'
-  )
+  return getMockCalendar(fromMs, toMs)
 }
