@@ -17,6 +17,7 @@ export async function GET() {
       demoMode: isDemoMode(),
       services: {
         database: hasDatabase(),
+        oanda: Boolean(process.env.OANDA_API_TOKEN),
         twelveData: Boolean(process.env.TWELVE_DATA_API_KEY),
         alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
         calendar: Boolean(process.env.CALENDAR_API_KEY),
