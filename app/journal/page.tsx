@@ -12,25 +12,37 @@ import { GradeBadge, DirectionBadge } from '@/components/flowedge/badges'
 import { removeJournalEntry } from '@/app/actions/journal'
 import { computeExpectancy, stayOutQuality } from '@/lib/engine/expectancy'
 import { SETUP_LABELS, SESSION_LABELS } from '@/lib/engine/types'
-import { listJournalEntries } from '@/lib/store/journal'
-import { getSettings } from '@/lib/store/settings'
+import { fetchJournal, fetchSettings } from '@/lib/client/api'
+import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 import { cn } from '@/lib/utils'
 import type { JournalRecord } from '@/lib/engine/expectancy'
 import type { FlowEdgeSettings } from '@/lib/engine/types'
 
 export default function JournalPage() {
   const [data, setData] = useState<{ entries: JournalRecord[]; settings: FlowEdgeSettings } | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
-  useEffect(() => {
-    Promise.all([listJournalEntries(), getSettings()]).then(([entries, settings]) => {
-      setData({ entries, settings })
-    })
-  }, [])
+  const load = () => {
+    setError(null)
+    Promise.all([fetchJournal(), fetchSettings()])
+      .then(([entries, s]) => setData({ entries, settings: s.settings }))
+      .catch(setError)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [])
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <h1 className="text-xl font-semibold tracking-tight">Journal</h1>
+        <ErrorState error={error} retry={load} />
+      </div>
+    )
+  }
   if (!data) {
     return (
       <div className="mx-auto max-w-6xl space-y-4">
-        <div className="text-muted-foreground">Loading...</div>
+        <LoadingState />
       </div>
     )
   }

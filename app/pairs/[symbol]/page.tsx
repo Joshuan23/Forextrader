@@ -22,7 +22,23 @@ export default async function PairDetailPage({ params }: { params: { symbol: str
   )?.symbol
   if (!symbol) notFound()
 
-  const [settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+  let settings, journal
+  try {
+    ;[settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Live data unavailable'
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <h1 className="text-xl font-semibold tracking-tight">{symbol}</h1>
+        <Card className="border-destructive/40">
+          <CardContent className="p-4">
+            <div className="text-sm font-semibold text-destructive">Configuration required</div>
+            <p className="mt-1 text-sm text-muted-foreground">{msg}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
   const ctx = await createScanContext(settings, journal)
   const ev = await evaluatePair(symbol, ctx)
   if (!ev) notFound()

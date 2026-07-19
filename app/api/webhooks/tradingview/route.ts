@@ -98,6 +98,16 @@ export async function POST(req: NextRequest) {
     const signal = await ingestTradingViewAlert(normalized.value, settings, journal)
     await saveSignal(signal)
 
+    // Push fan-out for approved A/B signals — never fails ingestion.
+    let push: { sent: number; skipped: string | null } = { sent: 0, skipped: 'not attempted' }
+    try {
+      const { notifyApprovedSignal } = await import('@/lib/services/notifications')
+      push = await notifyApprovedSignal(signal)
+    } catch (err) {
+      push = { sent: 0, skipped: err instanceof Error ? err.message : 'push_failed' }
+      console.error('[webhook] push fan-out failed:', err)
+    }
+
     return NextResponse.json({
       ok: true,
       decision: signal.status, // "approved" | "blocked"
@@ -126,6 +136,7 @@ export async function POST(req: NextRequest) {
       invalidationRule: signal.plan.invalidationLogic,
       explanation: signal.explanation,
       expiresAt: new Date(signal.expiresAt).toISOString(),
+      pushNotifications: push,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'ingest_failed'

@@ -58,12 +58,15 @@ export async function getSettings(): Promise<FlowEdgeSettings> {
 }
 
 export async function saveSettings(next: FlowEdgeSettings): Promise<void> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Saving settings')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {

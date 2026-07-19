@@ -16,12 +16,15 @@ function memory(): EngineSignal[] {
 }
 
 export async function saveSignal(signal: EngineSignal): Promise<EngineSignal> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Signal persistence')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {
@@ -90,12 +93,15 @@ export async function saveSignal(signal: EngineSignal): Promise<EngineSignal> {
 }
 
 export async function listStoredSignals(limit = 50): Promise<EngineSignal[]> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Stored signals')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {
@@ -120,12 +126,15 @@ export async function resolveSignal(
   id: string,
   outcome: SignalLifecycle
 ): Promise<EngineSignal | null> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Signal resolution')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {

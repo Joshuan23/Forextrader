@@ -23,3 +23,9 @@ export const env = schema.parse({
 
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey)
 export const isRevenueCatConfigured = Boolean(env.revenueCatIosKey || env.revenueCatAndroidKey)
+
+// Real-data policy: demo/mock providers (bundled sample signals, mock
+// billing) are reachable ONLY when this flag is explicitly true. A
+// production build without EXPO_PUBLIC_FLOWEDGE_API_URL fails loudly in
+// the data layer instead of quietly rendering samples.
+export const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true'

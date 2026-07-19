@@ -10,32 +10,34 @@ import {
 } from '@/components/ui/table'
 import { SignalCard } from '@/components/flowedge/signal-card'
 import { EventRiskBadge, GradeBadge, DirectionBadge } from '@/components/flowedge/badges'
-import { scanMarket, getSessionInfo, getProfile } from '@/lib/engine'
 import { REGIME_LABELS, SETUP_LABELS, type PairEvaluation } from '@/lib/engine/types'
-import { getSettings } from '@/lib/store/settings'
-import { listJournalEntries } from '@/lib/store/journal'
+import { fetchFullScan, type FullScan } from '@/lib/client/api'
+import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 import { cn } from '@/lib/utils'
 
 export default function DashboardPage() {
-  const [data, setData] = useState<{
-    evals: PairEvaluation[]
-    session: ReturnType<typeof getSessionInfo>
-    profile: ReturnType<typeof getProfile>
-  } | null>(null)
+  const [data, setData] = useState<FullScan | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
-  useEffect(() => {
-    Promise.all([getSettings(), listJournalEntries()]).then(async ([settings, journal]) => {
-      const evals = await scanMarket(settings, journal)
-      const session = getSessionInfo()
-      const profile = getProfile(settings.activeProfileId)
-      setData({ evals, session, profile })
-    })
-  }, [])
+  const load = () => {
+    setError(null)
+    fetchFullScan().then(setData).catch(setError)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [])
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <h1 className="text-xl font-semibold tracking-tight">Market Desk</h1>
+        <ErrorState error={error} retry={load} />
+      </div>
+    )
+  }
   if (!data) {
     return (
       <div className="mx-auto max-w-6xl space-y-4">
-        <div className="text-muted-foreground">Loading...</div>
+        <LoadingState label="Scanning market with live server data…" />
       </div>
     )
   }

@@ -3,10 +3,8 @@
 import { useEffect, useState } from 'react'
 import { SignalsList } from '@/components/flowedge/signals-list'
 import { TvInbox } from '@/components/flowedge/tv-inbox'
-import { scanMarket } from '@/lib/engine'
-import { getSettings } from '@/lib/store/settings'
-import { listJournalEntries } from '@/lib/store/journal'
-import { listStoredSignals } from '@/lib/store/signals'
+import { fetchFullScan, fetchInboxSignals } from '@/lib/client/api'
+import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 import type { EngineSignal } from '@/lib/engine/types'
 
 export default function SignalsPage() {
@@ -14,22 +12,35 @@ export default function SignalsPage() {
     signals: EngineSignal[]
     tvSignals: EngineSignal[]
   } | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
-  useEffect(() => {
-    Promise.all([getSettings(), listJournalEntries(), listStoredSignals(20)]).then(async ([settings, journal, tvSignals]) => {
-      const evals = await scanMarket(settings, journal)
-      const signals = [
-        ...evals.flatMap((e) => e.signals).sort((a, b) => b.confidence - a.confidence),
-        ...evals.flatMap((e) => e.blocked).sort((a, b) => b.confidence - a.confidence),
-      ]
-      setData({ signals, tvSignals })
-    })
-  }, [])
+  const load = () => {
+    setError(null)
+    Promise.all([fetchFullScan(), fetchInboxSignals(20)])
+      .then(([scan, tvSignals]) => {
+        const signals = [
+          ...scan.evals.flatMap((e) => e.signals).sort((a, b) => b.confidence - a.confidence),
+          ...scan.evals.flatMap((e) => e.blocked).sort((a, b) => b.confidence - a.confidence),
+        ]
+        setData({ signals, tvSignals })
+      })
+      .catch(setError)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [])
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <h1 className="text-xl font-semibold tracking-tight">Trade Plans</h1>
+        <ErrorState error={error} retry={load} />
+      </div>
+    )
+  }
   if (!data) {
     return (
       <div className="mx-auto max-w-6xl space-y-6">
-        <div className="text-muted-foreground">Loading...</div>
+        <LoadingState />
       </div>
     )
   }

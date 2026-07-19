@@ -15,7 +15,8 @@ import {
   stayOutQuality,
 } from '@/lib/engine/expectancy'
 import { SETUP_LABELS, SESSION_LABELS, type SessionTag, type SetupType } from '@/lib/engine/types'
-import { listJournalEntries } from '@/lib/store/journal'
+import { fetchJournal } from '@/lib/client/api'
+import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 import { cn } from '@/lib/utils'
 import type { JournalRecord } from '@/lib/engine/expectancy'
 
@@ -39,9 +40,11 @@ interface AnalyticsData {
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
-  useEffect(() => {
-    listJournalEntries().then((entries) => {
+  const load = () => {
+    setError(null)
+    fetchJournal().catch((e) => { setError(e); throw e }).then((entries) => {
       const overall = computeExpectancy(entries)
       const byPair = groupExpectancy(entries, (e) => e.symbol)
       const bySetup = groupExpectancy(
@@ -90,13 +93,23 @@ export default function AnalyticsPage() {
         bestSession,
         worstSession,
       })
-    })
-  }, [])
+    }).catch(() => undefined)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [])
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <h1 className="text-xl font-semibold tracking-tight">Analytics</h1>
+        <ErrorState error={error} retry={load} />
+      </div>
+    )
+  }
   if (!data) {
     return (
       <div className="mx-auto max-w-6xl space-y-4">
-        <div className="text-muted-foreground">Loading...</div>
+        <LoadingState label="Computing analytics from stored trades…" />
       </div>
     )
   }

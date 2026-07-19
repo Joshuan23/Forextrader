@@ -106,18 +106,15 @@ function memoryStore(): JournalRecord[] {
 // ─── Public API ──────────────────────────────────────────────────────
 
 export async function listJournalEntries(): Promise<JournalRecord[]> {
-  // In browser or build environment, return seeded memory store
-  if (typeof window !== 'undefined') {
-    return memoryStore()
-  }
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Journal')
 
-  // Only try database access on server side
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {
@@ -151,12 +148,15 @@ export async function listJournalEntries(): Promise<JournalRecord[]> {
 export type NewJournalEntry = Omit<JournalRecord, 'id' | 'createdAt'>
 
 export async function addJournalEntry(entry: NewJournalEntry): Promise<JournalRecord> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Journal writes')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {
@@ -191,12 +191,15 @@ export async function addJournalEntry(entry: NewJournalEntry): Promise<JournalRe
 }
 
 export async function deleteJournalEntry(id: string): Promise<void> {
+  const { requireRealData } = await import('@/lib/config/runtime')
+  requireRealData('Journal writes')
+
   let db = null
   try {
     const { getDb } = await import('@/lib/db')
     db = getDb()
   } catch {
-    // Ignore errors during build or in browser context
+    // Prisma unavailable — demo mode only past this point
   }
 
   if (db) {

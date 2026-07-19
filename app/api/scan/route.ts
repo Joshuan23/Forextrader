@@ -1,15 +1,34 @@
-import { NextResponse } from 'next/server'
-import { scanMarket } from '@/lib/engine'
+import { NextRequest, NextResponse } from 'next/server'
+import { scanMarket, getSessionInfo, getProfile } from '@/lib/engine'
 import { getSettings } from '@/lib/store/settings'
 import { listJournalEntries } from '@/lib/store/journal'
+import { errorResponse } from '@/lib/config/runtime'
 
 export const dynamic = 'force-dynamic'
 
 // Full market scan as JSON — the same engine output the pages render.
-// Useful for external automation (alerts, bots) and client refresh.
-export async function GET() {
-  const [settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+// ?full=1 returns complete evaluations (session info, profile, layer
+// scores, derivations) — the web pages' data source, so the engine and
+// stores run ONLY on the server against real data.
+export async function GET(req: NextRequest) {
+  let settings, journal
+  try {
+    ;[settings, journal] = await Promise.all([getSettings(), listJournalEntries()])
+  } catch (e) {
+    const { body, status } = errorResponse(e)
+    return NextResponse.json(body, { status })
+  }
   const evals = await scanMarket(settings, journal)
+
+  if (req.nextUrl.searchParams.get('full') === '1') {
+    return NextResponse.json({
+      scannedAt: new Date().toISOString(),
+      session: getSessionInfo(),
+      profile: getProfile(settings.activeProfileId),
+      settings,
+      evals,
+    })
+  }
 
   return NextResponse.json({
     scannedAt: new Date().toISOString(),

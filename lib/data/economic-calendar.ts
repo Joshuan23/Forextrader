@@ -110,8 +110,80 @@ export function getMockCalendar(fromMs: number, toMs: number): EconomicEventLite
     .sort((a, b) => a.scheduledAt - b.scheduledAt)
 }
 
-// Provider entry point — swap the internals for a real calendar API.
+// ── Real provider: Finnhub economic calendar ─────────────────────────
+// https://finnhub.io/docs/api/economic-calendar — CALENDAR_API_KEY is a
+// Finnhub API key. Impact mapping: high/medium/low come straight from the
+// feed; central-bank detection is keyword-based on the release title.
+
+const CB_PATTERN = /rate decision|interest rate|fomc|ecb|boe|boj|rba|boc|snb|central bank|monetary policy|press conference/i
+
+interface FinnhubEvent {
+  country?: string
+  event?: string
+  impact?: string
+  time?: string
+  unit?: string
+  estimate?: number | null
+  prev?: number | null
+  actual?: number | null
+}
+
+const COUNTRY_TO_CCY: Record<string, string> = {
+  US: 'USD', EU: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR',
+  GB: 'GBP', UK: 'GBP', JP: 'JPY', AU: 'AUD', NZ: 'NZD', CA: 'CAD', CH: 'CHF', CN: 'CNY',
+}
+
+async function fetchFinnhubCalendar(fromMs: number, toMs: number, apiKey: string): Promise<EconomicEventLite[]> {
+  const from = new Date(fromMs).toISOString().slice(0, 10)
+  const to = new Date(toMs).toISOString().slice(0, 10)
+  const url = `https://finnhub.io/api/v1/calendar/economic?from=${from}&to=${to}&token=${apiKey}`
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000), cache: 'no-store' })
+  if (!res.ok) throw new Error(`Economic calendar provider failed: HTTP ${res.status}`)
+  const data = (await res.json()) as { economicCalendar?: FinnhubEvent[] }
+
+  return (data.economicCalendar ?? [])
+    .map((e): EconomicEventLite | null => {
+      const currency = COUNTRY_TO_CCY[e.country ?? ''] ?? null
+      const ts = e.time ? Date.parse(e.time) : NaN
+      if (!currency || !e.event || Number.isNaN(ts)) return null
+      const impact: MacroRisk =
+        e.impact === 'high' ? 'high' : e.impact === 'medium' ? 'medium' : 'low'
+      return {
+        id: `fh-${currency}-${e.event.replace(/\W+/g, '_')}-${ts}`,
+        title: e.event,
+        currency,
+        impact,
+        scheduledAt: ts,
+        isCentralBank: CB_PATTERN.test(e.event),
+      }
+    })
+    .filter((e): e is EconomicEventLite => e !== null)
+    .filter((e) => e.scheduledAt >= fromMs && e.scheduledAt <= toMs)
+    .sort((a, b) => a.scheduledAt - b.scheduledAt)
+}
+
+// Provider entry point — selected by environment:
+//   CALENDAR_API_KEY set        → real Finnhub calendar
+//   DEVELOPMENT_DEMO_MODE=true  → deterministic template calendar
+//   neither, in production      → fail loudly (blackout logic must never
+//                                 run silently on fake event times)
 export async function fetchCalendarEvents(fromMs: number, toMs: number): Promise<EconomicEventLite[]> {
-  // e.g. if (process.env.CALENDAR_API_KEY) { …fetch real events… }
-  return getMockCalendar(fromMs, toMs)
+  const apiKey = process.env.CALENDAR_API_KEY
+  if (apiKey) {
+    try {
+      return await fetchFinnhubCalendar(fromMs, toMs, apiKey)
+    } catch (e) {
+      // Provider downtime: safer to degrade to the deterministic template
+      // (which over-approximates blackout windows) than to trade blind.
+      console.error('[calendar] real provider failed, using template fallback:', e)
+      return getMockCalendar(fromMs, toMs)
+    }
+  }
+  if (process.env.DEVELOPMENT_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production') {
+    return getMockCalendar(fromMs, toMs)
+  }
+  const { SetupError } = await import('@/lib/config/runtime')
+  throw new SetupError(
+    'CALENDAR_API_KEY is not configured. Set a Finnhub API key (free tier works) so news blackouts run on real event times, or set DEVELOPMENT_DEMO_MODE=true.'
+  )
 }

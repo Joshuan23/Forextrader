@@ -1,0 +1,62 @@
+import type { EngineSignal, FlowEdgeSettings, PairEvaluation } from '@/lib/engine/types'
+import type { JournalRecord } from '@/lib/engine/expectancy'
+import type { getProfile, getSessionInfo } from '@/lib/engine'
+
+// Browser-side API client for the web app. Pages fetch real server data
+// through these — no store imports, no engine execution, and no seeded
+// demo data ever reach the client bundle. Server errors (including
+// SetupError guidance like "DATABASE_URL is not configured") surface as
+// ApiError so pages can render the actual problem.
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly setup: boolean
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: 'no-store' })
+  const data = (await res.json().catch(() => null)) as ({ ok?: boolean; error?: string; setup?: boolean } & T) | null
+  if (!res.ok || data === null || data.ok === false) {
+    throw new ApiError(data?.error ?? `Request failed: HTTP ${res.status}`, res.status, Boolean(data?.setup))
+  }
+  return data
+}
+
+export interface FullScan {
+  scannedAt: string
+  session: ReturnType<typeof getSessionInfo>
+  profile: ReturnType<typeof getProfile>
+  settings: FlowEdgeSettings
+  evals: PairEvaluation[]
+}
+
+export function fetchFullScan(): Promise<FullScan> {
+  return getJson<FullScan>('/api/scan?full=1')
+}
+
+export async function fetchInboxSignals(limit = 20): Promise<EngineSignal[]> {
+  const data = await getJson<{ signals: EngineSignal[] }>(`/api/signals/inbox?limit=${limit}`)
+  return data.signals
+}
+
+export async function fetchJournal(): Promise<JournalRecord[]> {
+  const data = await getJson<{ entries: JournalRecord[] }>('/api/journal')
+  return data.entries
+}
+
+export interface SettingsResponse {
+  settings: FlowEdgeSettings
+  persisted: boolean
+  demoMode: boolean
+  services: Record<string, boolean>
+}
+
+export function fetchSettings(): Promise<SettingsResponse> {
+  return getJson<SettingsResponse>('/api/settings')
+}
