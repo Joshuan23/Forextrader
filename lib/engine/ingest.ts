@@ -82,8 +82,11 @@ export async function ingestTradingViewAlert(
   const session = getSessionInfo(new Date(now))
   const regime = classifyRegime(signalData.candles, pair.pipSize)
   const eventRisk = evaluateEventRisk(alert.symbol, calendar, settings)
+  // Real broker fill metrics when recorded; conservative model otherwise.
+  const { loadRealSlippage } = await import('@/lib/services/execution-metrics')
+  const realSlippage = await loadRealSlippage(alert.symbol, session.tag)
   const execution = evaluateExecution(
-    pair, spreadPips, regime.atrPips, session.tag, settings, profile.maxSpreadOverride
+    pair, spreadPips, regime.atrPips, session.tag, settings, profile.maxSpreadOverride, realSlippage
   )
   const view = buildStructureView(signalData.candles, htfData.candles, alert.symbol)
   const edgeMap = buildEdgeMap(journal)

@@ -1,8 +1,11 @@
 import type { CurrencyPair } from '@/types/forex'
 import type { ExecutionState, FlowEdgeSettings, SessionTag, SlippageProfile } from './types'
 
-// Deterministic mock slippage profile per pair/session. Replaced by real
-// ExecutionMetric rows (broker fill data) once collected in production.
+// Conservative slippage MODEL per pair/session — used only until real
+// ExecutionMetric rows (broker fill data) exist for the pair+session.
+// Callers pass real metrics via evaluateExecution's realSlippage param
+// (lib/services/execution-metrics.ts); the model is the labeled estimate,
+// never a substitute once real fills are recorded.
 export function getSlippageProfile(symbol: string, session: SessionTag): SlippageProfile {
   const seed = hash(`${symbol}:${session}`)
   const sessionFactor: Record<SessionTag, number> = {
@@ -30,14 +33,15 @@ export function evaluateExecution(
   atrPips: number,
   session: SessionTag,
   settings: FlowEdgeSettings,
-  overrideMaxSpreadPips?: number // stricter profile-level cap
+  overrideMaxSpreadPips?: number, // stricter profile-level cap
+  realSlippage?: SlippageProfile | null // measured broker fills (ExecutionMetric)
 ): ExecutionState {
   const maxAllowed = Math.min(
     settings.maxSpreadPips[pair.symbol] ?? settings.maxSpreadPips['default'] ?? 2,
     overrideMaxSpreadPips ?? Number.POSITIVE_INFINITY
   )
   const typical = pair.spread
-  const slippage = getSlippageProfile(pair.symbol, session)
+  const slippage = realSlippage ?? getSlippageProfile(pair.symbol, session)
 
   const ratio = typical > 0 ? liveSpreadPips / typical : 1
   const spreadState: ExecutionState['spreadState'] =

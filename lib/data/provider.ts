@@ -5,6 +5,21 @@ import { fetchFrankfurterRate, franklinSupports } from './frankfurter'
 import { generateCandles, generateAnchoredCandles, getLivePrice } from '@/lib/forex/data'
 import { CURRENCY_PAIRS } from '@/lib/forex/pairs'
 
+// Simulated market data is a development affordance ONLY. In production
+// (non-demo) the chain is Yahoo → Alpha Vantage → loud SetupError; the
+// engine must never scan synthetic candles in production.
+function simulationAllowed(): boolean {
+  return process.env.DEVELOPMENT_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production'
+}
+
+async function failNoLiveData(pair: string): Promise<never> {
+  const { SetupError } = await import('@/lib/config/runtime')
+  throw new SetupError(
+    `Live market data unavailable for ${pair}. Yahoo Finance is unreachable from this host and no ALPHA_VANTAGE_API_KEY is configured. ` +
+      'Set ALPHA_VANTAGE_API_KEY (free key: alphavantage.co) or another candle provider, or set DEVELOPMENT_DEMO_MODE=true for simulated data.'
+  )
+}
+
 export async function getCandles(
   pair: string,
   timeframe: Timeframe,
@@ -23,6 +38,9 @@ export async function getCandles(
       return { candles, source: 'live' }
     }
   }
+
+  // Real providers exhausted — simulated data only where explicitly allowed.
+  if (!simulationAllowed()) await failNoLiveData(pair)
 
   // 3. Frankfurter-anchored simulation — synthetic candles ending at the real current price
   if (franklinSupports(pair)) {
@@ -73,7 +91,8 @@ export async function getLiveRates(
       }
     }
 
-    // 4. Simulation fallback
+    // 4. Simulation fallback — demo/dev only; loud failure in production
+    if (!simulationAllowed()) await failNoLiveData(pair)
     const livePrice = getLivePrice(pair)
     result[pair] = {
       bid: livePrice.bid,

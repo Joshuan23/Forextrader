@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSupabase } from '@/lib/supabase'
+import { isDemoMode } from '@/lib/env'
 import type { JournalRow } from '@/api/types'
 
 const KEY = 'flowedge.journal'
 
-// Journal storage: Supabase when configured (RLS-scoped per user), local
-// AsyncStorage otherwise. Same shape either way.
+// Journal storage: Supabase (RLS-scoped per user) is the production
+// source of truth. Local AsyncStorage is reachable only in explicit demo
+// mode; Supabase errors propagate to the query error state instead of
+// silently switching stores.
 
 async function loadLocal(): Promise<JournalRow[]> {
   const raw = await AsyncStorage.getItem(KEY)
@@ -15,12 +18,18 @@ async function loadLocal(): Promise<JournalRow[]> {
 
 async function listJournal(): Promise<JournalRow[]> {
   const supabase = getSupabase()
-  if (!supabase) return loadLocal()
+  if (!supabase) {
+    if (isDemoMode) return loadLocal()
+    throw new Error(
+      'Journal requires Supabase: set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (or EXPO_PUBLIC_DEMO_MODE=true for a local-only demo build).'
+    )
+  }
   const { data, error } = await supabase
     .from('journal_entries')
     .select('*')
     .order('created_at', { ascending: false })
-  if (error || !data) return loadLocal()
+  if (error) throw new Error(`Journal query failed: ${error.message}`)
+  if (!data) return []
   return data.map((r) => ({
     id: r.id as string,
     pair: r.pair as string,
@@ -42,23 +51,26 @@ async function addJournal(entry: Omit<JournalRow, 'id' | 'createdAt'>): Promise<
   const supabase = getSupabase()
   if (supabase) {
     const { data } = await supabase.auth.getUser()
-    if (data.user) {
-      await supabase.from('journal_entries').insert({
-        user_id: data.user.id,
-        pair: entry.pair,
-        direction: entry.direction,
-        setup_type: entry.setupType,
-        session_tag: entry.session,
-        grade: entry.grade,
-        taken: entry.taken,
-        result_r: entry.resultR,
-        result_pips: entry.resultPips,
-        mistakes: entry.mistakes,
-        notes: entry.notes,
-        screenshot_url: entry.screenshotUrl,
-      })
-      return
-    }
+    if (!data.user) throw new Error('Sign in to save journal entries.')
+    const { error } = await supabase.from('journal_entries').insert({
+      user_id: data.user.id,
+      pair: entry.pair,
+      direction: entry.direction,
+      setup_type: entry.setupType,
+      session_tag: entry.session,
+      grade: entry.grade,
+      taken: entry.taken,
+      result_r: entry.resultR,
+      result_pips: entry.resultPips,
+      mistakes: entry.mistakes,
+      notes: entry.notes,
+      screenshot_url: entry.screenshotUrl,
+    })
+    if (error) throw new Error(`Journal save failed: ${error.message}`)
+    return
+  }
+  if (!isDemoMode) {
+    throw new Error('Journal requires Supabase auth — this build has no backend configured.')
   }
   const rows = await loadLocal()
   rows.unshift({ ...entry, id: `j-${Date.now()}`, createdAt: Date.now() })

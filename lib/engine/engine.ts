@@ -73,8 +73,11 @@ export async function evaluatePair(symbol: string, ctx: ScanContext): Promise<Pa
   const session = getSessionInfo(new Date(now))
   const regime = classifyRegime(candles, pair.pipSize)
   const eventRisk = evaluateEventRisk(symbol, ctx.calendar, settings)
+  // Real broker fill metrics when recorded; conservative model otherwise.
+  const { loadRealSlippage } = await import('@/lib/services/execution-metrics')
+  const realSlippage = await loadRealSlippage(symbol, session.tag)
   const execution = evaluateExecution(
-    pair, spreadPips, regime.atrPips, session.tag, settings, profile.maxSpreadOverride
+    pair, spreadPips, regime.atrPips, session.tag, settings, profile.maxSpreadOverride, realSlippage
   )
   const view = buildStructureView(candles, htfData.candles, symbol)
 

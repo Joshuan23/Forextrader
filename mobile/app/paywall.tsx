@@ -151,14 +151,6 @@ export default function Paywall() {
         </View>
       </Card>
 
-      {/* Social proof placeholder — replace with real testimonials before launch */}
-      <Card className="mt-3">
-        <Text className="text-xs italic leading-5 text-subtle">
-          “The NO TRADE calls saved me more money than the signals made me — and the signals are
-          good.” — beta trader
-        </Text>
-      </Card>
-
       {message && <Text className="mt-3 text-center text-xs text-warn">{message}</Text>}
 
       <View className="mt-4 gap-2">

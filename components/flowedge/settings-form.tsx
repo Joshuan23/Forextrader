@@ -49,8 +49,8 @@ export function SettingsForm({
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Data Provider API Keys</CardTitle>
           <CardDescription>
-            Keys are read from environment variables — set them in <code className="font-mono">.env.local</code>.
-            Without keys the engine runs on the mock/simulated provider chain.
+            Keys are read from environment variables — set them in <code className="font-mono">.env.local</code> (or Vercel).
+            In production, missing required services fail loudly; simulated providers require DEVELOPMENT_DEMO_MODE=true.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-2 sm:grid-cols-3">
