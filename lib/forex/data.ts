@@ -67,13 +67,17 @@ export function generateCandles(
 
   const mu = 0.0  // drift (zero for simplicity)
 
-  const end = endDate ?? new Date()
-  const startMs = end.getTime() - count * minutesPerCandle * 60 * 1000
+  // Determinism: align the series to the last COMPLETED bar boundary and
+  // seed from (pair, timeframe, aligned end). Any two calls inside the same
+  // bar produce byte-identical candles, so engine output cannot flap
+  // between requests — it only changes when a new bar closes.
+  const tfMs = minutesPerCandle * 60 * 1000
+  const endMs = Math.floor((endDate ?? new Date()).getTime() / tfMs) * tfMs
+  const startMs = endMs - count * tfMs
 
-  // Create a seed based on pair + date for reproducible data
-  const dateSeed = Math.floor(startMs / (1000 * 60 * 60 * 24))
   const pairSeed = pair.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  const rand = mulberry32(dateSeed + pairSeed * 1000)
+  const tfSeed = timeframeDurationMinutes(timeframe)
+  const rand = mulberry32((Math.floor(startMs / tfMs) + pairSeed * 7919 + tfSeed * 104729) >>> 0)
 
   const candles: Candle[] = []
   let price = pairInfo.basePrice
@@ -129,21 +133,17 @@ export function getLivePrice(pair: string): LivePrice {
     }
   }
 
-  // Generate today's candles and get the last one
+  // Deterministic: the simulated "live" mid is exactly the close of the
+  // last completed 1h bar — stable within the bar, no per-second jitter.
   const todayCandles = generateCandles(pair, '1h', 24)
   const lastCandle = todayCandles[todayCandles.length - 1]
   const firstCandle = todayCandles[0]
 
-  // Add small random walk using current time as seed
-  const timeSeed = Math.floor(Date.now() / 1000) // changes every second
-  const pairSeed = pair.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  const rand = mulberry32(timeSeed + pairSeed)
-  const walk = (rand() - 0.5) * 0.001  // ±0.1% random walk
-
-  const mid = parseFloat((lastCandle.close * (1 + walk)).toFixed(pairInfo.digits))
+  const mid = parseFloat(lastCandle.close.toFixed(pairInfo.digits))
+  // bid/ask keep one extra digit (fractional pip) so sub-pip spreads survive
   const halfSpread = (pairInfo.spread * pairInfo.pipSize) / 2
-  const bid = parseFloat((mid - halfSpread).toFixed(pairInfo.digits))
-  const ask = parseFloat((mid + halfSpread).toFixed(pairInfo.digits))
+  const bid = parseFloat((mid - halfSpread).toFixed(pairInfo.digits + 1))
+  const ask = parseFloat((mid + halfSpread).toFixed(pairInfo.digits + 1))
 
   const openPrice = firstCandle.open
   const changeAbs = parseFloat((mid - openPrice).toFixed(pairInfo.digits))

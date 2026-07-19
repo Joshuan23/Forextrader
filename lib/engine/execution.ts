@@ -1,0 +1,113 @@
+import type { CurrencyPair } from '@/types/forex'
+import type { ExecutionState, FlowEdgeSettings, SessionTag, SlippageProfile } from './types'
+
+// Conservative slippage MODEL per pair/session — used only until real
+// ExecutionMetric rows (broker fill data) exist for the pair+session.
+// Callers pass real metrics via evaluateExecution's realSlippage param
+// (lib/services/execution-metrics.ts); the model is the labeled estimate,
+// never a substitute once real fills are recorded.
+export function getSlippageProfile(symbol: string, session: SessionTag): SlippageProfile {
+  const seed = hash(`${symbol}:${session}`)
+  const sessionFactor: Record<SessionTag, number> = {
+    london_ny_overlap: 0.7,
+    london: 0.8,
+    newyork: 0.9,
+    asia_london_overlap: 1.1,
+    asia: 1.4,
+    dead_zone: 2.2,
+  }
+  const base = 0.15 + (seed % 20) / 100 // 0.15–0.34 pips
+  const factor = sessionFactor[session]
+  const avgPips = round2(base * factor)
+  return {
+    avgPips,
+    worstPips: round2(avgPips * (2.5 + (seed % 10) / 10)),
+    fillQuality: round2(Math.min(0.99, 0.97 - (factor - 0.7) * 0.05)),
+    sampleSize: 120 + (seed % 200),
+  }
+}
+
+export function evaluateExecution(
+  pair: CurrencyPair,
+  liveSpreadPips: number,
+  atrPips: number,
+  session: SessionTag,
+  settings: FlowEdgeSettings,
+  overrideMaxSpreadPips?: number, // stricter profile-level cap
+  realSlippage?: SlippageProfile | null // measured broker fills (ExecutionMetric)
+): ExecutionState {
+  const maxAllowed = Math.min(
+    settings.maxSpreadPips[pair.symbol] ?? settings.maxSpreadPips['default'] ?? 2,
+    overrideMaxSpreadPips ?? Number.POSITIVE_INFINITY
+  )
+  const typical = pair.spread
+  const slippage = realSlippage ?? getSlippageProfile(pair.symbol, session)
+
+  const ratio = typical > 0 ? liveSpreadPips / typical : 1
+  const spreadState: ExecutionState['spreadState'] =
+    ratio <= 1.1 ? 'tight' : ratio <= 1.8 ? 'normal' : 'wide'
+
+  const estimatedCostPips = round2(liveSpreadPips + slippage.avgPips)
+  const spreadPctOfAtr = atrPips > 0 ? Math.round((estimatedCostPips / atrPips) * 100) : 100
+
+  const notes: string[] = []
+  let ok = true
+  if (liveSpreadPips > maxAllowed) {
+    ok = false
+    notes.push(`Spread ${liveSpreadPips.toFixed(1)}p exceeds limit ${maxAllowed.toFixed(1)}p`)
+  }
+  if (spreadState === 'wide') {
+    notes.push(`Spread ${ratio.toFixed(1)}× typical — degraded execution`)
+  }
+  if (spreadPctOfAtr > 25) {
+    ok = false
+    notes.push(`Round-trip cost is ${spreadPctOfAtr}% of ATR — edge consumed by costs`)
+  } else if (spreadPctOfAtr > 15) {
+    notes.push(`Cost ${spreadPctOfAtr}% of ATR — thin margin over costs`)
+  }
+  if (notes.length === 0) notes.push('Execution conditions normal')
+
+  return {
+    spreadPips: round2(liveSpreadPips),
+    typicalSpreadPips: typical,
+    maxAllowedSpreadPips: maxAllowed,
+    spreadState,
+    slippage,
+    spreadPctOfAtr,
+    estimatedCostPips,
+    ok,
+    notes,
+  }
+}
+
+// score = 100 − spreadStatePenalty − costPenalty − slippagePenalty, where
+//   spreadStatePenalty: tight 0 · normal (1.1–1.8× typical) 10 · wide (>1.8×) 45
+//   costPenalty  = min(35, max(0, costPctOfATR − 8) × 2)
+//   slipPenalty  = min(15, avgSlippagePips × 20)
+// Hard fail (spread > limit or cost > 25% of ATR) → flat 10.
+export function executionScore(exec: ExecutionState): { score: number; note: string; rule: string } {
+  if (!exec.ok) {
+    return { score: 10, note: exec.notes[0], rule: `hard execution fail (${exec.notes[0]}) → flat 10` }
+  }
+  const statePenalty = exec.spreadState === 'normal' ? 10 : exec.spreadState === 'wide' ? 45 : 0
+  const costPenalty = Math.min(35, Math.max(0, exec.spreadPctOfAtr - 8) * 2)
+  const slipPenalty = Math.min(15, exec.slippage.avgPips * 20)
+  const score = Math.max(0, Math.round(100 - statePenalty - costPenalty - slipPenalty))
+  const rule =
+    `100 − ${statePenalty} (spread ${exec.spreadPips.toFixed(1)}p = ${exec.spreadState}) − ` +
+    `${costPenalty.toFixed(0)} (cost ${exec.spreadPctOfAtr}% of ATR, penalty 2×max(0,${exec.spreadPctOfAtr}−8) cap 35) − ` +
+    `${slipPenalty.toFixed(1)} (slippage ${exec.slippage.avgPips}p × 20, cap 15) = ${score}`
+  return { score, note: exec.notes[0], rule }
+}
+
+function hash(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) >>> 0
+  }
+  return h
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}

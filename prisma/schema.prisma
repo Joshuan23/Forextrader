@@ -1,0 +1,299 @@
+// FlowEdge — institutional FX decision engine
+// PostgreSQL schema. The app runs with an in-memory mock store when
+// DATABASE_URL is not configured (local development), and against this
+// schema when it is.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────
+
+enum Direction {
+  long
+  short
+}
+
+enum SignalGrade {
+  A
+  B
+  C
+  blocked
+}
+
+enum SignalStatus {
+  active
+  invalid
+  hit_tp1
+  hit_tp2
+  stopped
+  expired
+  blocked
+}
+
+enum SessionTag {
+  asia
+  london
+  newyork
+  london_ny_overlap
+  asia_london_overlap
+  dead_zone
+}
+
+enum RegimeTag {
+  trending_up
+  trending_down
+  ranging
+  volatile_expansion
+  quiet
+}
+
+enum EventImpact {
+  low
+  medium
+  high
+}
+
+enum MacroRiskLevel {
+  low
+  medium
+  high
+}
+
+enum SetupType {
+  pullback_continuation
+  breakout_retest
+  liquidity_sweep_reversal
+  range_fade
+  orderblock_mitigation
+}
+
+// ─── Market data ─────────────────────────────────────────────────────
+
+model Pair {
+  id         String   @id @default(cuid())
+  symbol     String   @unique // "EUR/USD"
+  name       String
+  base       String
+  quote      String
+  assetClass String   @default("forex")
+  digits     Int
+  pipSize    Float
+  // typical spread in pips, used as baseline for execution scoring
+  typicalSpread Float
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  candles          Candle[]
+  signals          Signal[]
+  journalEntries   JournalEntry[]
+  executionMetrics ExecutionMetric[]
+  sessionStats     PairSessionStats[]
+}
+
+model Candle {
+  id        String   @id @default(cuid())
+  pairId    String
+  pair      Pair     @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  timeframe String // "5m" | "15m" | "1h" | "4h" | "1d"
+  time      DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float    @default(0)
+
+  @@unique([pairId, timeframe, time])
+  @@index([pairId, timeframe, time(sort: Desc)])
+}
+
+model EconomicEvent {
+  id            String      @id @default(cuid())
+  title         String
+  currency      String // affected currency code, e.g. "USD"
+  impact        EventImpact
+  scheduledAt   DateTime
+  forecast      String?
+  previous      String?
+  actual        String?
+  isCentralBank Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@index([scheduledAt])
+  @@index([currency, scheduledAt])
+}
+
+// ─── Decision engine output ──────────────────────────────────────────
+
+enum EntryType {
+  market
+  limit
+  stop
+}
+
+model Signal {
+  id              String         @id @default(cuid())
+  pairId          String
+  pair            Pair           @relation(fields: [pairId], references: [id])
+  source          String         @default("engine") // "engine" | "tradingview"
+  timeframe       String
+  direction       Direction
+  entryType       EntryType      @default(limit)
+  setupType       SetupType
+  profileId       String         @default("intraday-swing")
+  entry           Float
+  stopLoss        Float
+  takeProfit1     Float
+  takeProfit2     Float
+  takeProfit3     Float?
+  riskReward      Float
+  confidenceScore Int // 0–100
+  grade           SignalGrade
+  regimeTag       RegimeTag
+  sessionTag      SessionTag
+  spreadAtSignal  Float // pips
+  atrAtSignal     Float // price units, signal timeframe ATR(14)
+  htfBias         String // "bullish" | "bearish" | "neutral"
+  eventRiskStatus MacroRiskLevel
+  status          SignalStatus   @default(active)
+  explanation     String // plain-English rationale
+  blockReasons    String[]       @default([])
+  layerScores     Json? // per-layer score breakdown
+  createdAt       DateTime       @default(now())
+  expiresAt       DateTime
+
+  tradePlan      TradePlan?
+  journalEntries JournalEntry[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([pairId, createdAt(sort: Desc)])
+}
+
+model TradePlan {
+  id                String   @id @default(cuid())
+  signalId          String   @unique
+  signal            Signal   @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  entry             Float
+  stopLoss          Float
+  takeProfit1       Float
+  takeProfit2       Float
+  takeProfit3       Float?
+  riskReward        Float
+  invalidationLogic String // when the idea is dead before entry/stop
+  managementPlan    String // partials, break-even rules
+  riskPerTradePct   Float    @default(0.5)
+  positionSizeLots  Float? // computed from account assumptions
+  checklist         Json? // pre-flight checklist items
+  createdAt         DateTime @default(now())
+}
+
+// ─── Journaling & feedback ───────────────────────────────────────────
+
+model JournalEntry {
+  id         String     @id @default(cuid())
+  signalId   String?
+  signal     Signal?    @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  pairId     String
+  pair       Pair       @relation(fields: [pairId], references: [id])
+  direction  Direction
+  setupType  SetupType
+  sessionTag SessionTag
+  regimeTag  RegimeTag
+  grade      SignalGrade
+  taken      Boolean    @default(true) // false = deliberately skipped
+  resultR    Float? // realised result in R multiples
+  resultPips Float?
+  entryAt    DateTime?
+  exitAt     DateTime?
+  screenshots String[]  @default([]) // URLs
+  mistakes   String[]   @default([]) // tags: "chased", "early_entry", ...
+  notes      String     @default("")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([pairId, createdAt(sort: Desc)])
+  @@index([sessionTag])
+  @@index([setupType])
+}
+
+model ExecutionMetric {
+  id              String     @id @default(cuid())
+  pairId          String
+  pair            Pair       @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  sessionTag      SessionTag
+  avgSpreadPips   Float
+  avgSlippagePips Float
+  worstSlippagePips Float    @default(0)
+  fillQuality     Float // 0–1, share of fills at or better than quote
+  sampleSize      Int
+  capturedAt      DateTime   @default(now())
+
+  @@index([pairId, sessionTag, capturedAt(sort: Desc)])
+}
+
+model PairSessionStats {
+  id          String     @id @default(cuid())
+  pairId      String
+  pair        Pair       @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  sessionTag  SessionTag
+  tradeCount  Int        @default(0)
+  winRate     Float      @default(0) // 0–1
+  expectancyR Float      @default(0)
+  avgSpread   Float      @default(0)
+  avgSlippage Float      @default(0)
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([pairId, sessionTag])
+}
+
+// Raw inbound webhook payloads, kept verbatim for debugging/audit.
+model RawWebhookLog {
+  id         String   @id @default(cuid())
+  receivedAt DateTime @default(now())
+  sourceIp   String?
+  valid      Boolean
+  error      String?
+  payload    Json
+
+  @@index([receivedAt(sort: Desc)])
+}
+
+// ─── Configuration ───────────────────────────────────────────────────
+
+model UserSettings {
+  id                    String   @id @default("default")
+  pairWhitelist         String[] @default([])
+  maxSpreadPips         Json // per-pair overrides + "default" key
+  minAtrPips            Float    @default(6) // block dead markets
+  maxAtrMultiple        Float    @default(3) // block panic volatility (x median ATR)
+  minRiskReward         Float    @default(1.5) // net-of-costs floor to TP2
+  activeProfileId       String   @default("intraday-swing")
+  sessionFilters        Json // { asia: bool, london: bool, ... }
+  newsBlackoutBeforeMin Int      @default(30)
+  newsBlackoutAfterMin  Int      @default(15)
+  centralBankDowngrade  Boolean  @default(true)
+  riskPerTradePct       Float    @default(0.5)
+  accountCcy            String   @default("USD")
+  accountSize           Float    @default(100000)
+  minConfidence         Int      @default(50) // below this → blocked
+  signalWeights         Json // { structure, htfBias, regime, session, execution, eventRisk }
+  brokerAssumptions     Json // { commissionPerLot, avgSlippagePips, ... }
+  apiKeys               Json? // provider keys entered in UI (masked)
+  updatedAt             DateTime @updatedAt
+}
+
+model StrategyProfile {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String   @default("")
+  setupTypes   String[] @default([]) // enabled SetupType names
+  weights      Json // layer weight overrides
+  minGrade     SignalGrade @default(B)
+  active       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

@@ -160,6 +160,51 @@ export function bollingerBands(
   return result
 }
 
+// Wilder's ADX — trend strength (0–100), direction-agnostic
+export function adx(candles: Candle[], period: number): number[] {
+  const result: number[] = new Array(candles.length).fill(NaN)
+  if (candles.length < period * 2 + 1) return result
+
+  const tr: number[] = []
+  const plusDM: number[] = []
+  const minusDM: number[] = []
+
+  for (let i = 1; i < candles.length; i++) {
+    const upMove = candles[i].high - candles[i - 1].high
+    const downMove = candles[i - 1].low - candles[i].low
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0)
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0)
+    const hl = candles[i].high - candles[i].low
+    const hc = Math.abs(candles[i].high - candles[i - 1].close)
+    const lc = Math.abs(candles[i].low - candles[i - 1].close)
+    tr.push(Math.max(hl, hc, lc))
+  }
+
+  // Wilder smoothing
+  let trS = tr.slice(0, period).reduce((a, b) => a + b, 0)
+  let plusS = plusDM.slice(0, period).reduce((a, b) => a + b, 0)
+  let minusS = minusDM.slice(0, period).reduce((a, b) => a + b, 0)
+
+  const dx: number[] = []
+  for (let i = period; i < tr.length; i++) {
+    trS = trS - trS / period + tr[i]
+    plusS = plusS - plusS / period + plusDM[i]
+    minusS = minusS - minusS / period + minusDM[i]
+    const plusDI = trS > 0 ? (100 * plusS) / trS : 0
+    const minusDI = trS > 0 ? (100 * minusS) / trS : 0
+    const sum = plusDI + minusDI
+    dx.push(sum > 0 ? (100 * Math.abs(plusDI - minusDI)) / sum : 0)
+
+    if (dx.length === period) {
+      result[i + 1] = dx.reduce((a, b) => a + b, 0) / period
+    } else if (dx.length > period) {
+      result[i + 1] = (result[i] * (period - 1) + dx[dx.length - 1]) / period
+    }
+  }
+
+  return result
+}
+
 export function atr(candles: Candle[], period: number): number[] {
   const result: number[] = new Array(candles.length).fill(NaN)
   if (candles.length < period + 1) return result

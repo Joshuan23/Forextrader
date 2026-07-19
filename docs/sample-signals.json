@@ -1,0 +1,388 @@
+{
+  "approved_grade_A": {
+    "id": "fe-USDCAD-liquidity_sweep_reversal-1784350800000",
+    "pair": "USD/CAD",
+    "timeframe": "15m",
+    "direction": "short",
+    "entryType": "market",
+    "setupType": "liquidity_sweep_reversal",
+    "grade": "A",
+    "confidenceScore": 87,
+    "approved": true,
+    "status": "approved",
+    "sessionTag": "london_ny_overlap",
+    "regimeTag": "ranging",
+    "htfBias": "bearish",
+    "eventRiskStatus": "low",
+    "spreadAtSignal": 0.4,
+    "atrAtSignal": 0.0009093206860925762,
+    "entry": 1.3666,
+    "stopLoss": 1.3682,
+    "takeProfit1": 1.3642,
+    "takeProfit2": 1.3626,
+    "takeProfit3": null,
+    "riskRewardToTp1": 1.42,
+    "riskRewardToTp2": 2.39,
+    "positionSizeLots": 4.35,
+    "confidenceEquation": "0.35\u00d776 + 0.20\u00d788 + 0.10\u00d785 + 0.15\u00d7100 + 0.10\u00d797 + 0.10\u00d7100 = 87.4 \u2192 87",
+    "blockReasons": [],
+    "invalidationRule": "A second sweep of 1.3680 without reclaim means the level is being run \u2014 the reversal premise is dead. Skip if the spread widens above 2.0p before the fill. Cancel the order if event risk rises into a blackout window.",
+    "levelDerivations": [
+      {
+        "level": "Entry",
+        "value": 1.3666,
+        "formula": "close of confirmation bar (market)",
+        "computation": "= 1.3666"
+      },
+      {
+        "level": "Stop",
+        "value": 1.3682,
+        "formula": "sweepExtreme + 0.25 \u00d7 ATR",
+        "computation": "1.3680 + 0.25 \u00d7 0.0009 = 1.3682"
+      },
+      {
+        "level": "TP1",
+        "value": 1.3642,
+        "formula": "entry \u2212 1.5 \u00d7 risk",
+        "computation": "1.3666 \u2212 1.5 \u00d7 0.0016 = 1.3642"
+      },
+      {
+        "level": "TP2",
+        "value": 1.3626,
+        "formula": "entry \u2212 2.5 \u00d7 risk",
+        "computation": "1.3666 \u2212 2.5 \u00d7 0.0016 = 1.3626"
+      }
+    ],
+    "layerScores": [
+      {
+        "layer": "Technical Structure",
+        "score": 76,
+        "weight": 0.35,
+        "rule": "confirmed sweep base 76; counter-trend against 4H bias \u2192 \u221218 \u21d2 76 (aligned, no deduction)"
+      },
+      {
+        "layer": "Higher-TF Bias",
+        "score": 88,
+        "weight": 0.2,
+        "rule": "short aligned with bearish 4H bias \u2192 conviction score 88 (4H structure bearish (LH/LL) AND close < 4H EMA50 (1.37957) \u2192 bias bearish, conviction 88)"
+      },
+      {
+        "layer": "Volatility / Regime",
+        "score": 85,
+        "weight": 0.1,
+        "rule": "ADX 16.1 < 22 (or EMAs mixed), ATR P95 in 16\u201391 \u2192 ranging \u2192 62; mean-reversion setup in a range \u2192 override 85"
+      },
+      {
+        "layer": "Session / Liquidity",
+        "score": 100,
+        "weight": 0.15,
+        "rule": "session table: overlap 100 \u00b7 london 85 \u00b7 newyork 72 \u00b7 asia/lon 62 \u00b7 asia 45 \u00b7 dead 15; now london_ny_overlap \u2192 100"
+      },
+      {
+        "layer": "Execution Quality",
+        "score": 97,
+        "weight": 0.1,
+        "rule": "100 \u2212 0 (spread 0.4p = tight) \u2212 0 (cost 6% of ATR, penalty 2\u00d7max(0,6\u22128) cap 35) \u2212 2.8 (slippage 0.14p \u00d7 20, cap 15) = 97"
+      },
+      {
+        "layer": "Macro / Event Risk",
+        "score": 100,
+        "weight": 0.1,
+        "rule": "no qualifying events \u2192 100 = 100"
+      }
+    ]
+  },
+  "downgraded_grade_C_watch_only": {
+    "id": "fe-USDJPY-pullback_continuation-1784350800000",
+    "pair": "USD/JPY",
+    "timeframe": "15m",
+    "direction": "long",
+    "entryType": "limit",
+    "setupType": "pullback_continuation",
+    "grade": "C",
+    "confidenceScore": 68,
+    "approved": true,
+    "status": "approved",
+    "sessionTag": "asia",
+    "regimeTag": "trending_up",
+    "htfBias": "bullish",
+    "eventRiskStatus": "medium",
+    "spreadAtSignal": 0.3,
+    "atrAtSignal": 0.12676303794582353,
+    "entry": 144.136,
+    "stopLoss": 143.923,
+    "takeProfit1": 144.286,
+    "takeProfit2": 144.471,
+    "takeProfit3": 144.586,
+    "riskRewardToTp1": 0.66,
+    "riskRewardToTp2": 1.5,
+    "positionSizeLots": 3.38,
+    "confidenceEquation": "0.35\u00d770 + 0.20\u00d762 + 0.10\u00d790 + 0.15\u00d745 + 0.10\u00d794 + 0.10\u00d755 = 67.5 \u2192 68",
+    "blockReasons": [],
+    "invalidationRule": "A 15m close below 143.986 (the swing low that anchors this leg) invalidates the idea before entry. Skip if the spread widens above 1.5p before the fill. Cancel the order if event risk rises into a blackout window.",
+    "levelDerivations": [
+      {
+        "level": "Entry",
+        "value": 144.136,
+        "formula": "swingHigh \u2212 0.50 \u00d7 leg",
+        "computation": "144.286 \u2212 0.50 \u00d7 0.300 = 144.136"
+      },
+      {
+        "level": "Stop",
+        "value": 143.923,
+        "formula": "swingLow \u2212 0.50 \u00d7 ATR",
+        "computation": "143.986 \u2212 0.50 \u00d7 0.127 = 143.923"
+      },
+      {
+        "level": "TP1",
+        "value": 144.286,
+        "formula": "swingHigh",
+        "computation": "= 144.286"
+      },
+      {
+        "level": "TP2",
+        "value": 144.471,
+        "formula": "swingHigh + 0.618 \u00d7 leg",
+        "computation": "144.286 + 0.618 \u00d7 0.300 = 144.471"
+      },
+      {
+        "level": "TP3",
+        "value": 144.586,
+        "formula": "swingHigh + 1.00 \u00d7 leg",
+        "computation": "144.286 + 1.00 \u00d7 0.300 = 144.586"
+      }
+    ],
+    "layerScores": [
+      {
+        "layer": "Technical Structure",
+        "score": 70,
+        "weight": 0.35,
+        "rule": "base 70 (valid pullback, fib 30\u201378%), no order-block confluence"
+      },
+      {
+        "layer": "Higher-TF Bias",
+        "score": 62,
+        "weight": 0.2,
+        "rule": "long aligned with bullish 4H bias \u2192 conviction score 62 (4H structure bullish but close < EMA50 (142.49563) disagrees \u2192 bias bullish, conviction 62)"
+      },
+      {
+        "layer": "Volatility / Regime",
+        "score": 90,
+        "weight": 0.1,
+        "rule": "ADX 35.6 \u2265 22 with EMA20/50 aligned \u2192 trending \u2192 90"
+      },
+      {
+        "layer": "Session / Liquidity",
+        "score": 45,
+        "weight": 0.15,
+        "rule": "session table: overlap 100 \u00b7 london 85 \u00b7 newyork 72 \u00b7 asia/lon 62 \u00b7 asia 45 \u00b7 dead 15; now asia \u2192 45"
+      },
+      {
+        "layer": "Execution Quality",
+        "score": 94,
+        "weight": 0.1,
+        "rule": "100 \u2212 0 (spread 0.3p = tight) \u2212 0 (cost 5% of ATR, penalty 2\u00d7max(0,5\u22128) cap 35) \u2212 5.8 (slippage 0.29p \u00d7 20, cap 15) = 94"
+      },
+      {
+        "layer": "Macro / Event Risk",
+        "score": 55,
+        "weight": 0.1,
+        "rule": "medium risk (CB day, high-impact \u2264 8h, or medium-impact \u00b160m) \u2192 65; central-bank day cap \u2192 min(score, 55) = 55"
+      }
+    ]
+  },
+  "blocked_no_trade": {
+    "id": "fe-EURUSD-liquidity_sweep_reversal-1784350800000",
+    "pair": "EUR/USD",
+    "timeframe": "15m",
+    "direction": "long",
+    "entryType": "market",
+    "setupType": "liquidity_sweep_reversal",
+    "grade": "blocked",
+    "confidenceScore": 70,
+    "approved": false,
+    "status": "blocked",
+    "sessionTag": "london_ny_overlap",
+    "regimeTag": "trending_up",
+    "htfBias": "neutral",
+    "eventRiskStatus": "high",
+    "spreadAtSignal": 0.2,
+    "atrAtSignal": 0.0007021886172106312,
+    "entry": 1.1312,
+    "stopLoss": 1.1303,
+    "takeProfit1": 1.1325,
+    "takeProfit2": 1.1334,
+    "takeProfit3": null,
+    "riskRewardToTp1": 1.35,
+    "riskRewardToTp2": 2.31,
+    "positionSizeLots": 5.56,
+    "confidenceEquation": "0.35\u00d776 + 0.20\u00d750 + 0.10\u00d790 + 0.15\u00d7100 + 0.10\u00d797 + 0.10\u00d70 = 70.3 \u2192 70",
+    "blockReasons": [
+      "US Non-Farm Payrolls (USD) in 15m \u2014 inside 30m pre-news blackout"
+    ],
+    "invalidationRule": "A second sweep of 1.1305 without reclaim means the level is being run \u2014 the reversal premise is dead. Skip if the spread widens above 1.2p before the fill. Cancel the order if event risk rises into a blackout window.",
+    "levelDerivations": [
+      {
+        "level": "Entry",
+        "value": 1.1312,
+        "formula": "close of confirmation bar (market)",
+        "computation": "= 1.1312"
+      },
+      {
+        "level": "Stop",
+        "value": 1.1303,
+        "formula": "sweepExtreme \u2212 0.25 \u00d7 ATR",
+        "computation": "1.1305 \u2212 0.25 \u00d7 0.0007 = 1.1303"
+      },
+      {
+        "level": "TP1",
+        "value": 1.1325,
+        "formula": "entry + 1.5 \u00d7 risk",
+        "computation": "1.1312 + 1.5 \u00d7 0.0009 = 1.1325"
+      },
+      {
+        "level": "TP2",
+        "value": 1.1334,
+        "formula": "entry + 2.5 \u00d7 risk",
+        "computation": "1.1312 + 2.5 \u00d7 0.0009 = 1.1334"
+      }
+    ],
+    "layerScores": [
+      {
+        "layer": "Technical Structure",
+        "score": 76,
+        "weight": 0.35,
+        "rule": "confirmed sweep base 76; counter-trend against 4H bias \u2192 \u221218 \u21d2 76 (aligned, no deduction)"
+      },
+      {
+        "layer": "Higher-TF Bias",
+        "score": 50,
+        "weight": 0.2,
+        "rule": "4H bias neutral \u2192 50"
+      },
+      {
+        "layer": "Volatility / Regime",
+        "score": 90,
+        "weight": 0.1,
+        "rule": "ADX 45 \u2265 22 with EMA20/50 aligned \u2192 trending \u2192 90"
+      },
+      {
+        "layer": "Session / Liquidity",
+        "score": 100,
+        "weight": 0.15,
+        "rule": "session table: overlap 100 \u00b7 london 85 \u00b7 newyork 72 \u00b7 asia/lon 62 \u00b7 asia 45 \u00b7 dead 15; now london_ny_overlap \u2192 100"
+      },
+      {
+        "layer": "Execution Quality",
+        "score": 97,
+        "weight": 0.1,
+        "rule": "100 \u2212 0 (spread 0.2p = tight) \u2212 0 (cost 5% of ATR, penalty 2\u00d7max(0,5\u22128) cap 35) \u2212 3.4 (slippage 0.17p \u00d7 20, cap 15) = 97"
+      },
+      {
+        "layer": "Macro / Event Risk",
+        "score": 0,
+        "weight": 0.1,
+        "rule": "inside blackout window (30m before / 15m after high-impact) \u2192 0"
+      }
+    ]
+  },
+  "contrast_same_setup_grade_B_at_overlap": {
+    "id": "fe-USDJPY-pullback_continuation-1784350800000",
+    "pair": "USD/JPY",
+    "timeframe": "15m",
+    "direction": "long",
+    "entryType": "limit",
+    "setupType": "pullback_continuation",
+    "grade": "B",
+    "confidenceScore": 81,
+    "approved": true,
+    "status": "approved",
+    "sessionTag": "london_ny_overlap",
+    "regimeTag": "trending_up",
+    "htfBias": "bullish",
+    "eventRiskStatus": "low",
+    "spreadAtSignal": 0.3,
+    "atrAtSignal": 0.12676303794582353,
+    "entry": 144.136,
+    "stopLoss": 143.923,
+    "takeProfit1": 144.286,
+    "takeProfit2": 144.471,
+    "takeProfit3": 144.586,
+    "riskRewardToTp1": 0.67,
+    "riskRewardToTp2": 1.52,
+    "positionSizeLots": 3.38,
+    "confidenceEquation": "0.35\u00d770 + 0.20\u00d762 + 0.10\u00d790 + 0.15\u00d7100 + 0.10\u00d796 + 0.10\u00d7100 = 80.5 \u2192 81",
+    "blockReasons": [],
+    "invalidationRule": "A 15m close below 143.986 (the swing low that anchors this leg) invalidates the idea before entry. Skip if the spread widens above 1.5p before the fill. Cancel the order if event risk rises into a blackout window.",
+    "levelDerivations": [
+      {
+        "level": "Entry",
+        "value": 144.136,
+        "formula": "swingHigh \u2212 0.50 \u00d7 leg",
+        "computation": "144.286 \u2212 0.50 \u00d7 0.300 = 144.136"
+      },
+      {
+        "level": "Stop",
+        "value": 143.923,
+        "formula": "swingLow \u2212 0.50 \u00d7 ATR",
+        "computation": "143.986 \u2212 0.50 \u00d7 0.127 = 143.923"
+      },
+      {
+        "level": "TP1",
+        "value": 144.286,
+        "formula": "swingHigh",
+        "computation": "= 144.286"
+      },
+      {
+        "level": "TP2",
+        "value": 144.471,
+        "formula": "swingHigh + 0.618 \u00d7 leg",
+        "computation": "144.286 + 0.618 \u00d7 0.300 = 144.471"
+      },
+      {
+        "level": "TP3",
+        "value": 144.586,
+        "formula": "swingHigh + 1.00 \u00d7 leg",
+        "computation": "144.286 + 1.00 \u00d7 0.300 = 144.586"
+      }
+    ],
+    "layerScores": [
+      {
+        "layer": "Technical Structure",
+        "score": 70,
+        "weight": 0.35,
+        "rule": "base 70 (valid pullback, fib 30\u201378%), no order-block confluence"
+      },
+      {
+        "layer": "Higher-TF Bias",
+        "score": 62,
+        "weight": 0.2,
+        "rule": "long aligned with bullish 4H bias \u2192 conviction score 62 (4H structure bullish but close < EMA50 (142.49563) disagrees \u2192 bias bullish, conviction 62)"
+      },
+      {
+        "layer": "Volatility / Regime",
+        "score": 90,
+        "weight": 0.1,
+        "rule": "ADX 35.6 \u2265 22 with EMA20/50 aligned \u2192 trending \u2192 90"
+      },
+      {
+        "layer": "Session / Liquidity",
+        "score": 100,
+        "weight": 0.15,
+        "rule": "session table: overlap 100 \u00b7 london 85 \u00b7 newyork 72 \u00b7 asia/lon 62 \u00b7 asia 45 \u00b7 dead 15; now london_ny_overlap \u2192 100"
+      },
+      {
+        "layer": "Execution Quality",
+        "score": 96,
+        "weight": 0.1,
+        "rule": "100 \u2212 0 (spread 0.3p = tight) \u2212 0 (cost 4% of ATR, penalty 2\u00d7max(0,4\u22128) cap 35) \u2212 3.6 (slippage 0.18p \u00d7 20, cap 15) = 96"
+      },
+      {
+        "layer": "Macro / Event Risk",
+        "score": 100,
+        "weight": 0.1,
+        "rule": "no qualifying events \u2192 100 = 100"
+      }
+    ]
+  }
+}
