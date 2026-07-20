@@ -11,7 +11,30 @@ import {
   Settings,
   Activity,
 } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/auth/auth-provider'
+
+// Signed-in user + sign out. Renders nothing when auth isn't configured.
+function UserFooter() {
+  const { user, configured, signOut } = useAuth()
+  if (!configured || !user) return null
+  return (
+    <div className="border-t p-3">
+      <div className="truncate text-xs font-medium text-foreground" title={user.email ?? ''}>
+        {user.email}
+      </div>
+      <button
+        type="button"
+        onClick={() => void signOut()}
+        className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        Sign out
+      </button>
+    </div>
+  )
+}
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -65,6 +88,7 @@ export function Nav() {
           <NavLink key={item.href} {...item} />
         ))}
       </nav>
+      <UserFooter />
       <div className="border-t p-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
         Discipline over frequency
       </div>
