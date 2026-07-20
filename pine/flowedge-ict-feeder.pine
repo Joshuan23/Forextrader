@@ -111,7 +111,6 @@ if barstate.isconfirmed
     if not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh
         armedShort := true
         sweepHigh  := high
-        mssLowTgt  := lastSwingHigh  // placeholder; corrected below
         mssLowTgt  := lastSwingLow
     if armedLong and close < nz(sweepLow, close)
         armedLong := false
