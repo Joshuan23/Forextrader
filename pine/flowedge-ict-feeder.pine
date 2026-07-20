@@ -1,0 +1,219 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────
+// FlowEdge ICT Feeder — liquidity sweep + market-structure-shift, gated by
+// a multi-factor confluence filter. Non-repainting, one alert per setup.
+//
+// ENTRY SEQUENCE (all on closed bars):
+//   1. LIQUIDITY SWEEP — price runs a confirmed swing (stop hunt) and
+//      closes back inside → arms a reversal bias.
+//   2. MARKET STRUCTURE SHIFT — price closes through the opposite confirmed
+//      swing → confirms reversal.
+//   3. CONFLUENCE GATE — the shift must clear ≥ N confirmations:
+//        · Fair Value Gap (displacement imbalance)
+//        · HTF bias aligned (higher-timeframe EMA, non-repainting)
+//        · Displacement candle (range ≥ 1.2×ATR, body ≥ 50%)
+//        · RSI momentum aligned
+//        · Entry sits in discount (longs) / premium (shorts)
+//   4. KILL ZONE — London / New York only.
+//   Stop = swept extreme; target = opposing liquidity or minRR.
+//
+// NON-REPAINTING: closed bars only, confirmed pivots, HTF via prior closed
+// bar, once-per-bar-close alerts, cooldown + disarm after firing.
+//
+// SETUP: Pine Editor → paste → Add to chart (5m/15m, OANDA:EURUSD…).
+// Set Webhook secret, then alert: FlowEdge ICT Feeder → "Any alert()
+// function call", empty message, Webhook URL <app>/api/webhooks/tradingview
+// ─────────────────────────────────────────────────────────────────────
+indicator("FlowEdge ICT Feeder", overlay = true, max_labels_count = 200)
+
+// ── Auth ─────────────────────────────────────────────────────────────
+grpA   = "FlowEdge"
+secret = input.string("CHANGE_ME_MIN_8_CHARS", "Webhook secret", group = grpA, tooltip = "Must match TRADINGVIEW_WEBHOOK_SECRET in the app")
+mode   = input.string("watchlist", "Mode", options = ["watchlist", "automation"], group = grpA)
+
+// ── Structure / gates ────────────────────────────────────────────────
+grpS         = "ICT structure"
+pivotLen     = input.int(5,   "Swing pivot bars (left/right)", minval = 2, maxval = 20, group = grpS, tooltip = "Higher = only major swings, fewer signals")
+atrLen       = input.int(14,  "ATR length", minval = 2, group = grpS)
+minRr        = input.float(2.0,"Minimum reward:risk target", minval = 1.0, step = 0.5, group = grpS)
+cooldown     = input.int(20,  "Cooldown bars between alerts", minval = 1, group = grpS)
+
+grpC         = "Confluence gate"
+requireFvg   = input.bool(true, "Require Fair Value Gap", group = grpC)
+useHtfBias   = input.bool(true, "Require HTF-bias alignment", group = grpC)
+htfTf        = input.timeframe("60", "HTF for bias", group = grpC)
+minConfl     = input.int(3, "Minimum confluences to fire (of 5)", minval = 1, maxval = 5, group = grpC, tooltip = "Higher = fewer, higher-quality trades")
+
+grpK         = "Kill zones (UTC)"
+killOnly     = input.bool(true, "Only fire inside a kill zone", group = grpK)
+lonStart     = input.int(7,  "London start", minval = 0, maxval = 23, group = grpK)
+lonEnd       = input.int(10, "London end",   minval = 0, maxval = 23, group = grpK)
+nyStart      = input.int(12, "New York start", minval = 0, maxval = 23, group = grpK)
+nyEnd        = input.int(15, "New York end",   minval = 0, maxval = 23, group = grpK)
+
+// ── Series ───────────────────────────────────────────────────────────
+atr     = ta.atr(atrLen)
+emaFast = ta.ema(close, 21)
+emaSlow = ta.ema(close, 50)
+rsi     = ta.rsi(close, 14)
+
+// HTF bias — uses the PRIOR closed HTF bar → never repaints
+f_htfBias() =>
+    e = ta.ema(close, 50)
+    close[1] > e[1] ? 1 : close[1] < e[1] ? -1 : 0
+htfBias = request.security(syminfo.tickerid, htfTf, f_htfBias(), lookahead = barmerge.lookahead_off)
+htfUp   = htfBias > 0
+htfDn   = htfBias < 0
+
+// Confirmed swings (non-repainting)
+ph = ta.pivothigh(pivotLen, pivotLen)
+pl = ta.pivotlow(pivotLen, pivotLen)
+var float lastSwingHigh = na
+var float prevSwingHigh = na
+var float lastSwingLow  = na
+var float prevSwingLow  = na
+if not na(ph)
+    prevSwingHigh := lastSwingHigh
+    lastSwingHigh := ph
+if not na(pl)
+    prevSwingLow := lastSwingLow
+    lastSwingLow := pl
+
+// Kill zones
+utcH       = hour(time, "UTC")
+inLondon   = utcH >= lonStart and utcH < lonEnd
+inNY       = utcH >= nyStart and utcH < nyEnd
+inKill     = (not killOnly) or inLondon or inNY
+sessionTag = inLondon ? "london" : inNY ? "newyork" : (utcH >= 23 or utcH < 7) ? "asia" : "dead_zone"
+
+// FVG (3-candle imbalance) + displacement
+bullFvg      = low > high[2]
+bearFvg      = high < low[2]
+barRange     = high - low
+bodySize     = math.abs(close - open)
+displacement = barRange >= 1.2 * atr and bodySize >= 0.5 * barRange
+
+// ── State machine: sweep → shift ─────────────────────────────────────
+var bool  armedLong  = false
+var float sweepLow   = na
+var float mssHighTgt = na
+var bool  armedShort = false
+var float sweepHigh  = na
+var float mssLowTgt  = na
+var int   lastAlertBar = -99999
+cooled = bar_index - lastAlertBar >= cooldown
+
+if barstate.isconfirmed
+    if not na(lastSwingLow) and low < lastSwingLow and close > lastSwingLow
+        armedLong  := true
+        sweepLow   := low
+        mssHighTgt := lastSwingHigh
+    if not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh
+        armedShort := true
+        sweepHigh  := high
+        mssLowTgt  := lastSwingHigh  // placeholder; corrected below
+        mssLowTgt  := lastSwingLow
+    if armedLong and close < nz(sweepLow, close)
+        armedLong := false
+    if armedShort and close > nz(sweepHigh, close)
+        armedShort := false
+
+// ── Entry: MSS + confluence gate ─────────────────────────────────────
+f_num(x) => str.tostring(x, "#.#####")
+
+string setupType = ""
+string direction = ""
+float  entryCand = na
+float  stopCand  = na
+float  tpCand    = na
+float  trigger   = na
+int    confScore = 0
+string confList  = ""
+
+if barstate.isconfirmed and inKill and cooled
+    // Bullish
+    if armedLong and not na(mssHighTgt) and close > mssHighTgt
+        eqLong = (mssHighTgt + sweepLow) / 2
+        cFvg   = bullFvg
+        cHtf   = htfUp
+        cDisp  = displacement
+        cRsi   = rsi > 50
+        cDisc  = close <= eqLong
+        confScore := (cFvg ? 1 : 0) + (cHtf ? 1 : 0) + (cDisp ? 1 : 0) + (cRsi ? 1 : 0) + (cDisc ? 1 : 0)
+        confList := (cFvg ? "fvg," : "") + (cHtf ? "htf," : "") + (cDisp ? "displacement," : "") + (cRsi ? "rsi," : "") + (cDisc ? "discount," : "")
+        gate = confScore >= minConfl and (not requireFvg or cFvg) and (not useHtfBias or cHtf)
+        if gate
+            setupType := "liquidity_sweep"
+            direction := "long"
+            entryCand := close
+            stopCand  := sweepLow - 0.10 * atr
+            risk      = entryCand - stopCand
+            tpCand    := (not na(prevSwingHigh) and prevSwingHigh > entryCand + minRr * risk) ? prevSwingHigh : entryCand + minRr * risk
+            trigger   := mssHighTgt
+            armedLong := false
+    // Bearish
+    else if armedShort and not na(mssLowTgt) and close < mssLowTgt
+        eqShort = (sweepHigh + mssLowTgt) / 2
+        cFvg   = bearFvg
+        cHtf   = htfDn
+        cDisp  = displacement
+        cRsi   = rsi < 50
+        cPrem  = close >= eqShort
+        confScore := (cFvg ? 1 : 0) + (cHtf ? 1 : 0) + (cDisp ? 1 : 0) + (cRsi ? 1 : 0) + (cPrem ? 1 : 0)
+        confList := (cFvg ? "fvg," : "") + (cHtf ? "htf," : "") + (cDisp ? "displacement," : "") + (cRsi ? "rsi," : "") + (cPrem ? "premium," : "")
+        gate = confScore >= minConfl and (not requireFvg or cFvg) and (not useHtfBias or cHtf)
+        if gate
+            setupType := "liquidity_sweep"
+            direction := "short"
+            entryCand := close
+            stopCand  := sweepHigh + 0.10 * atr
+            risk      = stopCand - entryCand
+            tpCand    := (not na(prevSwingLow) and prevSwingLow < entryCand - minRr * risk) ? prevSwingLow : entryCand - minRr * risk
+            trigger   := mssLowTgt
+            armedShort := false
+
+validLevels = not na(entryCand) and not na(stopCand) and (direction == "long" ? stopCand < entryCand : stopCand > entryCand)
+
+// ── Alert ────────────────────────────────────────────────────────────
+if setupType != "" and validLevels
+    payload = '{'
+      + '"secret":"' + secret + '",'
+      + '"source":"tradingview",'
+      + '"symbol":"' + syminfo.ticker + '",'
+      + '"timeframe":"' + timeframe.period + '",'
+      + '"setupType":"' + setupType + '",'
+      + '"direction":"' + direction + '",'
+      + '"mode":"' + mode + '",'
+      + '"close":' + f_num(close) + ','
+      + '"high":' + f_num(high) + ','
+      + '"low":' + f_num(low) + ','
+      + '"atr":' + f_num(atr) + ','
+      + '"emaFast":' + f_num(emaFast) + ','
+      + '"emaSlow":' + f_num(emaSlow) + ','
+      + '"rsi":' + str.tostring(rsi, "#.#") + ','
+      + '"swingHigh":' + f_num(nz(lastSwingHigh, high)) + ','
+      + '"swingLow":' + f_num(nz(lastSwingLow, low)) + ','
+      + '"sessionTag":"' + sessionTag + '",'
+      + '"triggerLevel":' + f_num(trigger) + ','
+      + '"entryCandidate":' + f_num(entryCand) + ','
+      + '"stopCandidate":' + f_num(stopCand) + ','
+      + '"tpCandidate":' + f_num(tpCand) + ','
+      + '"confluenceScore":' + str.tostring(confScore) + ','
+      + '"confirmations":"' + confList + '",'
+      + '"chartUrl":"https://www.tradingview.com/chart/?symbol=' + syminfo.tickerid + '",'
+      + '"timestamp":' + str.tostring(time)
+      + '}'
+    alert(payload, alert.freq_once_per_bar_close)
+    lastAlertBar := bar_index
+    label.new(bar_index, direction == "long" ? low : high,
+      text = (direction == "long" ? "▲ " : "▼ ") + "SWEEP+MSS " + str.tostring(confScore) + "/5",
+      style = direction == "long" ? label.style_label_up : label.style_label_down,
+      color = direction == "long" ? color.new(color.teal, 15) : color.new(color.red, 15),
+      textcolor = color.white, size = size.small)
+
+// ── Visuals ──────────────────────────────────────────────────────────
+plot(emaFast, "EMA 21", color = color.new(color.blue, 45))
+plot(emaSlow, "EMA 50", color = color.new(color.orange, 45))
+bgcolor(inLondon ? color.new(color.blue, 93) : inNY ? color.new(color.green, 93) : na, title = "Kill zone")
+plotshape(barstate.isconfirmed and not na(lastSwingLow) and low < lastSwingLow and close > lastSwingLow, "Sell-side sweep", shape.triangleup, location.belowbar, color.new(color.teal, 45), size = size.tiny)
+plotshape(barstate.isconfirmed and not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh, "Buy-side sweep", shape.triangledown, location.abovebar, color.new(color.red, 45), size = size.tiny)

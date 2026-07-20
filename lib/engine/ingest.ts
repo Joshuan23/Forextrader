@@ -44,6 +44,11 @@ const TV_QUALITY_BASE: Record<NormalizedAlert['tvSetupType'], number> = {
   breakout_continuation: 68,
   session_breakout: 66,
   range_rejection: 62,
+  // ICT: a sweep + market-structure-shift is a high-quality reversal read;
+  // order-block / FVG mitigation are strong continuation reads.
+  liquidity_sweep: 74,
+  order_block: 70,
+  fvg_mitigation: 68,
 }
 
 const TV_ENTRY_TYPE: Record<NormalizedAlert['tvSetupType'], EntryType> = {
@@ -51,6 +56,10 @@ const TV_ENTRY_TYPE: Record<NormalizedAlert['tvSetupType'], EntryType> = {
   breakout_continuation: 'stop',
   session_breakout: 'stop',
   range_rejection: 'market',
+  // ICT entries fire on the shift close (market) or a limit back into the zone.
+  liquidity_sweep: 'market',
+  order_block: 'limit',
+  fvg_mitigation: 'limit',
 }
 
 export async function ingestTradingViewAlert(
@@ -149,7 +158,15 @@ export async function ingestTradingViewAlert(
     quality += 4
     qualityParts.push(`+4 (RSI ${alert.rsi!.toFixed(1)} in ${dir === 'long' ? '45–70' : '30–55'} band)`)
   }
-  quality = Math.min(85, quality)
+  // ICT confluence stack: each confirmation the chart cleared (HTF bias,
+  // FVG/displacement, discount/premium, RSI) adds quality, capped at +12.
+  if (alert.confluenceScore && alert.confluenceScore > 0) {
+    const bonus = Math.min(12, alert.confluenceScore * 3)
+    quality += bonus
+    const list = alert.confirmations ? ` — ${alert.confirmations.replace(/,+$/,'').replace(/,/g, ', ')}` : ''
+    qualityParts.push(`+${bonus} (${alert.confluenceScore} ICT confluences${list})`)
+  }
+  quality = Math.min(90, quality)
 
   const derivations: LevelDerivation[] = [
     {
