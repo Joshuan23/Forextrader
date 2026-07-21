@@ -53,6 +53,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Outcome sweep: resolve previously stored signals against the candles
+    // printed since they fired (hit_tp1/hit_tp2/stopped/expired). Never
+    // fails the scan; feeds the win-rate/expectancy analytics.
+    let outcomes: { checked: number; resolved: unknown[]; errors: string[] } = {
+      checked: 0,
+      resolved: [],
+      errors: [],
+    }
+    try {
+      const { resolveOutcomes } = await import('@/lib/services/outcomes')
+      outcomes = await resolveOutcomes()
+    } catch (e) {
+      outcomes.errors.push(e instanceof Error ? e.message : 'outcome sweep failed')
+    }
+
     return NextResponse.json({
       ok: true,
       scannedAt: new Date().toISOString(),
@@ -60,6 +75,7 @@ export async function GET(req: NextRequest) {
       approvedSignals: approved.length,
       persisted,
       pushed,
+      outcomes,
       errors,
     })
   } catch (e) {
