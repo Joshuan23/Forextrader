@@ -67,9 +67,50 @@ export function IctWatchList({ pairs }: { pairs: IctWatchPair[] }) {
                 <KillZoneBadge zone={p.killZone} active={p.inKillZone} />
               </div>
             </div>
+
+            {p.liquidity && (p.liquidity.above.length > 0 || p.liquidity.below.length > 0) && (
+              <div className="mt-3 border-t border-border pt-2.5">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Order-book liquidity (DOM)
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 text-[11px]">
+                  <LiquidityCol label="Above (buy-side)" side="short" pools={p.liquidity.above} />
+                  <LiquidityCol label="Below (sell-side)" side="long" pools={p.liquidity.below} />
+                </div>
+                {p.drawOnLiquidity && (
+                  <p className="mt-1.5 text-[10px] leading-4 text-primary">→ {p.drawOnLiquidity}</p>
+                )}
+              </div>
+            )}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function LiquidityCol({
+  label,
+  side,
+  pools,
+}: {
+  label: string
+  side: 'long' | 'short'
+  pools: { price: number; percent: number }[]
+}) {
+  return (
+    <div>
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      {pools.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground">—</div>
+      ) : (
+        pools.map((b) => (
+          <div key={b.price} className="flex items-center justify-between">
+            <span className={`font-mono ${side === 'long' ? 'text-long' : 'text-short'}`}>{b.price}</span>
+            <span className="text-muted-foreground">{b.percent}%</span>
+          </div>
+        ))
+      )}
     </div>
   )
 }

@@ -77,6 +77,8 @@ export interface IctWatchPair {
   confluencesReady?: string[]
   confluenceScore?: number
   waitingFor?: string
+  liquidity?: { above: { price: number; percent: number }[]; below: { price: number; percent: number }[] } | null
+  drawOnLiquidity?: string | null
 }
 
 export interface IctWatchResponse {
