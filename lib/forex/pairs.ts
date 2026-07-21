@@ -42,6 +42,12 @@ export const CURRENCY_PAIRS: CurrencyPair[] = [
     base: 'EUR', quote: 'GBP', assetClass: 'forex',
     digits: 4, pipSize: 0.0001, spread: 0.5, basePrice: 0.8340,
   },
+  {
+    symbol: 'GBP/JPY', name: 'Pound / Yen',
+    base: 'GBP', quote: 'JPY', assetClass: 'forex',
+    // JPY cross: 3 digits, 1 pip = 0.01. Volatile → wider ~1.2-pip spread.
+    digits: 3, pipSize: 0.01, spread: 1.2, basePrice: 197.50,
+  },
 
   // ─── Metals ──────────────────────────────────────────────────────────
   {

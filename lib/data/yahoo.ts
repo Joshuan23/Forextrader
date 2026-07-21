@@ -15,6 +15,7 @@ const TICKER: Record<string, string> = {
   'USD/CAD': 'USDCAD=X',
   'NZD/USD': 'NZDUSD=X',
   'EUR/GBP': 'EURGBP=X',
+  'GBP/JPY': 'GBPJPY=X',
   'XAU/USD': 'GC=F',
   'XAG/USD': 'SI=F',
   'NAS100':  '^NDX',

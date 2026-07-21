@@ -330,6 +330,112 @@ export function generateIctEntries(candles: Candle[], opts: Partial<IctBacktestO
   return entries
 }
 
+// ── Live state: "what are we waiting for" per pair ───────────────────
+
+export interface IctLiveState {
+  bias: 'armed_long' | 'armed_short' | 'neutral'
+  lastClose: number
+  lastTime: number
+  atr: number
+  htfBias: 'up' | 'down' | 'neutral'
+  killZone: 'london' | 'newyork' | 'off'
+  inKillZone: boolean
+  // Present only when armed:
+  sweepLevel: number | null   // the liquidity that was swept (stop reference)
+  mssTarget: number | null    // the level a close must break to confirm entry
+  mssBroken: boolean          // has price already closed through the MSS level?
+  confirmationsReady: string[] // confluences currently satisfied
+  confluenceScore: number
+}
+
+// Replays the identical sweep→MSS machine and returns the CURRENT state at
+// the last closed bar — the live watchlist read. Arms on a sweep, disarms on
+// invalidation OR once the MSS level breaks (that window has passed).
+export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOptions> = {}): IctLiveState {
+  const o: IctBacktestOptions = { ...DEFAULT_ICT_OPTIONS, ...opts }
+  const n = candles.length
+  const closes = candles.map((c) => c.close)
+  const atr = atrSeries(candles, o.atrLen)
+  const rsi = rsiSeries(closes, 14)
+  const htf = htfBiasSeries(candles)
+
+  let lastSwingHigh = NaN, lastSwingLow = NaN
+  let armedLong = false, sweepLow = NaN, mssHighTgt = NaN
+  let armedShort = false, sweepHigh = NaN, mssLowTgt = NaN
+  const p = o.pivotLen
+
+  for (let i = 0; i < n; i++) {
+    const c0 = i - p
+    if (c0 >= p) {
+      let isPh = true, isPl = true
+      for (let k = c0 - p; k <= c0 + p; k++) {
+        if (k === c0) continue
+        if (candles[k].high >= candles[c0].high) isPh = false
+        if (candles[k].low <= candles[c0].low) isPl = false
+        if (!isPh && !isPl) break
+      }
+      if (isPh) lastSwingHigh = candles[c0].high
+      if (isPl) lastSwingLow = candles[c0].low
+    }
+    const bar = candles[i]
+    if (!Number.isNaN(lastSwingLow) && bar.low < lastSwingLow && bar.close > lastSwingLow) {
+      armedLong = true; sweepLow = bar.low; mssHighTgt = lastSwingHigh
+    }
+    if (!Number.isNaN(lastSwingHigh) && bar.high > lastSwingHigh && bar.close < lastSwingHigh) {
+      armedShort = true; sweepHigh = bar.high; mssLowTgt = lastSwingLow
+    }
+    if (armedLong && bar.close < sweepLow) armedLong = false
+    if (armedShort && bar.close > sweepHigh) armedShort = false
+    // The entry window closes once the MSS level breaks (scanner would have
+    // taken it there); after that we wait for the next sweep.
+    if (armedLong && !Number.isNaN(mssHighTgt) && bar.close > mssHighTgt) armedLong = false
+    if (armedShort && !Number.isNaN(mssLowTgt) && bar.close < mssLowTgt) armedShort = false
+  }
+
+  const i = n - 1
+  const bar = candles[i]
+  const barRange = bar.high - bar.low
+  const displacement = barRange >= 1.2 * atr[i] && Math.abs(bar.close - bar.open) >= 0.5 * barRange
+  const bullFvg = i >= 2 && bar.low > candles[i - 2].high
+  const bearFvg = i >= 2 && bar.high < candles[i - 2].low
+  const utcH = new Date(bar.time).getUTCHours()
+  const killZone: IctLiveState['killZone'] = utcH >= 7 && utcH < 10 ? 'london' : utcH >= 12 && utcH < 15 ? 'newyork' : 'off'
+  const htfBias: IctLiveState['htfBias'] = htf[i] > 0 ? 'up' : htf[i] < 0 ? 'down' : 'neutral'
+
+  const base: IctLiveState = {
+    bias: 'neutral',
+    lastClose: bar.close,
+    lastTime: bar.time,
+    atr: atr[i],
+    htfBias,
+    killZone,
+    inKillZone: killZone !== 'off',
+    sweepLevel: null,
+    mssTarget: null,
+    mssBroken: false,
+    confirmationsReady: [],
+    confluenceScore: 0,
+  }
+
+  if (armedLong) {
+    const eq = (mssHighTgt + sweepLow) / 2
+    const ready = [
+      ['fvg', bullFvg], ['htf', htf[i] > 0], ['displacement', displacement],
+      ['rsi', !Number.isNaN(rsi[i]) && rsi[i] > 50], ['discount', bar.close <= eq],
+    ].filter(([, ok]) => ok).map(([name]) => name as string)
+    return { ...base, bias: 'armed_long', sweepLevel: sweepLow, mssTarget: mssHighTgt, mssBroken: bar.close > mssHighTgt, confirmationsReady: ready, confluenceScore: ready.length }
+  }
+  if (armedShort) {
+    const eq = (sweepHigh + mssLowTgt) / 2
+    const ready = [
+      ['fvg', bearFvg], ['htf', htf[i] < 0], ['displacement', displacement],
+      ['rsi', !Number.isNaN(rsi[i]) && rsi[i] < 50], ['premium', bar.close >= eq],
+    ].filter(([, ok]) => ok).map(([name]) => name as string)
+    return { ...base, bias: 'armed_short', sweepLevel: sweepHigh, mssTarget: mssLowTgt, mssBroken: bar.close < mssLowTgt, confirmationsReady: ready, confluenceScore: ready.length }
+  }
+  return base
+}
+
 // ── The replay: entries + conservative forward simulation ────────────
 
 export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptions> = {}): IctBacktestResult {
