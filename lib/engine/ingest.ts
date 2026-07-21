@@ -66,7 +66,10 @@ export async function ingestTradingViewAlert(
   alert: NormalizedAlert,
   settings: FlowEdgeSettings,
   journal: JournalRecord[],
-  now = Date.now()
+  now = Date.now(),
+  // Same pipeline serves the server-side ICT scanner — only the label and
+  // id prefix differ so provenance stays honest in the UI and DB.
+  origin: { source: 'tradingview' | 'ict-scanner'; idPrefix: string } = { source: 'tradingview', idPrefix: 'tv' }
 ): Promise<EngineSignal> {
   const pair = getPairBySymbol(alert.symbol)
   if (!pair) throw new Error(`Pair ${alert.symbol} not configured`)
@@ -252,7 +255,7 @@ export async function ingestTradingViewAlert(
   })
 
   return {
-    id: `tv-${alert.symbol.replace('/', '')}-${alert.tvSetupType}-${alert.barTime}`,
+    id: `${origin.idPrefix}-${alert.symbol.replace('/', '')}-${alert.tvSetupType}-${alert.barTime}`,
     symbol: alert.symbol,
     pairName: pair.name,
     timeframe: alert.timeframe,
@@ -282,7 +285,7 @@ export async function ingestTradingViewAlert(
     createdAt: now,
     expiresAt: alert.signalTime + SIGNAL_EXPIRY_BARS * tfMs,
     dataSource: signalData.source,
-    source: 'tradingview',
+    source: origin.source,
     tvSetupType: alert.tvSetupType,
     tvMode: alert.mode,
     chartUrl: alert.chartUrl,

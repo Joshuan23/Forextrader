@@ -106,7 +106,7 @@ export async function listStoredSignals(limit = 50): Promise<EngineSignal[]> {
 
   if (db) {
     const rows = await db.signal.findMany({
-      where: { source: 'tradingview' },
+      where: { source: { in: ['tradingview', 'ict-scanner'] } },
       orderBy: { createdAt: 'desc' },
       take: limit,
     })
