@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCandles } from '@/lib/data/provider'
+import { fetchOrderBook } from '@/lib/data/oanda'
 import { analyzeIctState } from '@/lib/backtest/ict'
 import { getSettings } from '@/lib/store/settings'
 import { getPairBySymbol } from '@/lib/forex/pairs'
@@ -30,7 +31,10 @@ export async function GET() {
       settings.pairWhitelist.map(async (symbol) => {
         const cfg = getPairBySymbol(symbol)
         try {
-          const { candles, provider } = await getCandles(symbol, TF, 400)
+          const [{ candles, provider }, orderBook] = await Promise.all([
+            getCandles(symbol, TF, 400),
+            fetchOrderBook(symbol), // OANDA retail DOM (null if unsupported)
+          ])
           if (candles.length < 250) {
             return { symbol, status: 'insufficient_data', bars: candles.length }
           }
@@ -40,6 +44,19 @@ export async function GET() {
           const fmt = (n: number | null) => (n === null ? null : Number(n.toFixed(digits)))
           const pipsTo = (target: number | null) =>
             target === null ? null : Math.round((Math.abs(target - s.lastClose) / pip) * 10) / 10
+
+          // DOM liquidity map: biggest resting order pools above/below price.
+          const liquidity = orderBook
+            ? {
+                above: orderBook.aboveClusters.map((b) => ({ price: Number(b.price.toFixed(digits)), percent: b.percent })),
+                below: orderBook.belowClusters.map((b) => ({ price: Number(b.price.toFixed(digits)), percent: b.percent })),
+              }
+            : null
+          // Does the strongest pool sit beyond the MSS target? (draw-on-liquidity confluence)
+          const topAbove = liquidity?.above[0]
+          const topBelow = liquidity?.below[0]
+          const drawTarget =
+            s.bias === 'armed_long' && topAbove ? topAbove : s.bias === 'armed_short' && topBelow ? topBelow : null
 
           // Plain-English "what are we waiting for"
           let waitingFor: string
@@ -72,6 +89,10 @@ export async function GET() {
             confluencesReady: s.confirmationsReady.map((c) => CONFLUENCE_LABEL[c] ?? c),
             confluenceScore: s.confluenceScore,
             waitingFor,
+            liquidity, // DOM: { above:[{price,percent}], below:[{price,percent}] } | null
+            drawOnLiquidity: drawTarget
+              ? `Largest resting pool ${s.bias === 'armed_long' ? 'above' : 'below'} at ${drawTarget.price} (${drawTarget.percent}%) — the draw target if this fires.`
+              : null,
           }
         } catch (e) {
           return { symbol, status: 'error', error: e instanceof Error ? e.message : 'analysis failed' }

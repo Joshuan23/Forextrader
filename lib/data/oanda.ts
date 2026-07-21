@@ -58,6 +58,77 @@ async function oandaGet(path: string): Promise<Response> {
   })
 }
 
+// ── Order / Position book (retail-forex DOM) ─────────────────────────
+// OANDA exposes aggregated retail order & position books: at each price
+// bucket, the % of open orders/positions that are long vs short. Big
+// buckets = resting liquidity (stop clusters) that price is drawn to —
+// the pools ICT liquidity sweeps target.
+
+export interface LiquidityBucket {
+  price: number
+  percent: number // total order/position interest at this bucket (long+short)
+}
+export interface BookAnalysis {
+  price: number // snapshot mid at capture
+  time: number
+  aboveClusters: LiquidityBucket[] // largest pools above price (buy-side liquidity)
+  belowClusters: LiquidityBucket[] // largest pools below price (sell-side liquidity)
+}
+
+interface RawBucket {
+  price: string
+  longCountPercent: string
+  shortCountPercent: string
+}
+
+function analyzeBook(raw: { price: string; buckets?: RawBucket[]; time?: string } | undefined): BookAnalysis | null {
+  if (!raw?.buckets?.length) return null
+  const price = parseFloat(raw.price)
+  if (!isFinite(price)) return null
+  const parsed = raw.buckets
+    .map((b) => ({
+      price: parseFloat(b.price),
+      percent: parseFloat(b.longCountPercent) + parseFloat(b.shortCountPercent),
+    }))
+    .filter((b) => isFinite(b.price) && isFinite(b.percent) && b.percent > 0)
+  const top = (side: 'above' | 'below') =>
+    parsed
+      .filter((b) => (side === 'above' ? b.price > price : b.price < price))
+      .sort((a, b) => b.percent - a.percent)
+      .slice(0, 3)
+      .map((b) => ({ price: Math.round(b.price * 1e6) / 1e6, percent: Math.round(b.percent * 100) / 100 }))
+  return {
+    price,
+    time: raw.time ? Math.round(parseFloat(raw.time) * 1000) : Date.now(),
+    aboveClusters: top('above'),
+    belowClusters: top('below'),
+  }
+}
+
+async function fetchBook(pair: string, kind: 'orderBook' | 'positionBook'): Promise<BookAnalysis | null> {
+  if (!isConfigured()) return null
+  try {
+    const res = await oandaGet(`/v3/instruments/${toInstrument(pair)}/${kind}`)
+    if (!res.ok) return null
+    const data = (await res.json()) as Record<string, { price: string; buckets?: RawBucket[]; time?: string }>
+    return analyzeBook(data[kind])
+  } catch {
+    return null
+  }
+}
+
+// Order book: resting limit orders (includes stop clusters). The primary
+// liquidity map for sweep analysis.
+export function fetchOrderBook(pair: string): Promise<BookAnalysis | null> {
+  return fetchBook(pair, 'orderBook')
+}
+
+// Position book: where open positions sit — crowded longs/shorts whose
+// stops become the next liquidity target.
+export function fetchPositionBook(pair: string): Promise<BookAnalysis | null> {
+  return fetchBook(pair, 'positionBook')
+}
+
 interface OhlcStrings {
   o: string
   h: string
