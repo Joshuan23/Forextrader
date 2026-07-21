@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { Clock, Radio } from 'lucide-react'
 import { getSessionInfo } from '@/lib/engine/sessions'
 import type { SessionInfo } from '@/lib/engine/types'
@@ -22,6 +23,7 @@ export function SessionHeader() {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b bg-background/90 px-3 backdrop-blur sm:px-5">
       <div className="flex items-center gap-2 md:hidden">
+        <Image src="/flowedge-logo.png" alt="FlowEdge" width={24} height={24} priority className="h-6 w-6 rounded" />
         <span className="text-sm font-semibold tracking-tight">FlowEdge</span>
       </div>
       {session ? (

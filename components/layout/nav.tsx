@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
@@ -9,7 +10,6 @@ import {
   NotebookPen,
   BarChart3,
   Settings,
-  Activity,
 } from 'lucide-react'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -73,9 +73,7 @@ export function Nav() {
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col border-r bg-card md:flex">
       <div className="flex h-14 items-center gap-2.5 border-b px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/15">
-          <Activity className="h-4.5 w-4.5 h-[18px] w-[18px] text-primary" />
-        </div>
+        <Image src="/flowedge-logo.png" alt="FlowEdge" width={32} height={32} priority className="h-8 w-8 rounded-md" />
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight">FlowEdge</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
