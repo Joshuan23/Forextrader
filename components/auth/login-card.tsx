@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Activity } from 'lucide-react'
+import Image from 'next/image'
 import { getSupabaseBrowser } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,9 +46,7 @@ export function LoginCard() {
     <div className="grid min-h-screen place-items-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/15">
-            <Activity className="h-5 w-5 text-primary" />
-          </div>
+          <Image src="/flowedge-logo.png" alt="FlowEdge" width={40} height={40} priority className="h-10 w-10 rounded-lg" />
           <div className="leading-tight">
             <div className="text-base font-semibold tracking-tight">FlowEdge</div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">FX Decision Engine</div>
