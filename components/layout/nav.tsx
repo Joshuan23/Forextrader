@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   Zap,
+  Crosshair,
   CandlestickChart,
   NotebookPen,
   BarChart3,
@@ -39,6 +40,7 @@ function UserFooter() {
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/signals', label: 'Signals', icon: Zap },
+  { href: '/ict', label: 'ICT', icon: Crosshair },
   { href: '/pairs', label: 'Pairs', icon: CandlestickChart },
   { href: '/journal', label: 'Journal', icon: NotebookPen },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -98,7 +100,7 @@ export function Nav() {
 export function MobileNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden">
-      <div className="grid grid-cols-6">
+      <div className="grid grid-cols-7">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
           <MobileTab key={href} href={href} label={label} icon={Icon} />
         ))}

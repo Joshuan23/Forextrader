@@ -3,7 +3,7 @@ import type { FlowEdgeSettings } from './types'
 // Institutional defaults per the FlowEdge product spec:
 // weights 35/20/15/10/10/10, grade bands A≥85 / B≥70 / C≥60 / blocked <60.
 export const DEFAULT_SETTINGS: FlowEdgeSettings = {
-  pairWhitelist: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'XAU/USD'],
+  pairWhitelist: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'GBP/JPY', 'AUD/USD', 'USD/CAD', 'XAU/USD'],
   maxSpreadPips: {
     default: 2.0,
     'EUR/USD': 1.2,

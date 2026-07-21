@@ -60,3 +60,32 @@ export interface SettingsResponse {
 export function fetchSettings(): Promise<SettingsResponse> {
   return getJson<SettingsResponse>('/api/settings')
 }
+
+export interface IctWatchPair {
+  symbol: string
+  name?: string
+  status?: string
+  provider?: string
+  bias?: 'armed_long' | 'armed_short' | 'neutral'
+  lastClose?: number | null
+  htfBias?: 'up' | 'down' | 'neutral'
+  killZone?: 'london' | 'newyork' | 'off'
+  inKillZone?: boolean
+  sweepLevel?: number | null
+  mssTarget?: number | null
+  pipsToTarget?: number | null
+  confluencesReady?: string[]
+  confluenceScore?: number
+  waitingFor?: string
+}
+
+export interface IctWatchResponse {
+  scannedAt: string
+  timeframe: string
+  note: string
+  pairs: IctWatchPair[]
+}
+
+export function fetchIctWatch(): Promise<IctWatchResponse> {
+  return getJson<IctWatchResponse>('/api/ict/watch')
+}
