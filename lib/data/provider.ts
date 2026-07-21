@@ -22,56 +22,59 @@ async function failNoLiveData(pair: string): Promise<never> {
   )
 }
 
+export type CandleProvider = 'oanda' | 'yahoo' | 'twelvedata' | 'alphavantage' | 'frankfurter_anchored' | 'synthetic'
+
 export async function getCandles(
   pair: string,
   timeframe: Timeframe,
   count: number
-): Promise<{ candles: Candle[]; source: 'live' | 'simulated' }> {
+): Promise<{ candles: Candle[]; source: 'live' | 'simulated'; provider: CandleProvider }> {
   // 1. OANDA — real broker OHLCV, no daily cap (practice/live token)
   if (oandaConfigured()) {
     const candles = await oandaFetch(pair, timeframe, count)
     if (candles.length > 0) {
-      return { candles, source: 'live' }
+      return { candles, source: 'live', provider: 'oanda' }
     }
   }
 
-  // 2. Yahoo Finance — real OHLCV (may be blocked from some cloud IPs)
+  // 2. Yahoo Finance — real OHLCV (may be blocked from some cloud IPs;
+  //    history depth is shallow: ~5d of 15m, ~30d of 1h)
   const yfCandles = await fetchYahooCandles(pair, timeframe, count)
   if (yfCandles.length > 0) {
-    return { candles: yfCandles, source: 'live' }
+    return { candles: yfCandles, source: 'live', provider: 'yahoo' }
   }
 
   // 3. Twelve Data — real OHLCV, cloud-friendly (free 800 req/day, 8/min)
   if (tdConfigured()) {
     const candles = await tdFetch(pair, timeframe, count)
     if (candles.length > 0) {
-      return { candles, source: 'live' }
+      return { candles, source: 'live', provider: 'twelvedata' }
     }
   }
 
-  // 3. Alpha Vantage — if API key is configured
+  // 4. Alpha Vantage — if API key is configured
   if (isConfigured()) {
     const candles = await avFetch(pair, timeframe, count)
     if (candles.length > 0) {
-      return { candles, source: 'live' }
+      return { candles, source: 'live', provider: 'alphavantage' }
     }
   }
 
   // Real providers exhausted — simulated data only where explicitly allowed.
   if (!simulationAllowed()) await failNoLiveData(pair)
 
-  // 3. Frankfurter-anchored simulation — synthetic candles ending at the real current price
+  // 5. Frankfurter-anchored simulation — synthetic candles ending at the real current price
   if (franklinSupports(pair)) {
     const realRate = await fetchFrankfurterRate(pair)
     if (realRate) {
       const candles = generateAnchoredCandles(pair, timeframe, count, realRate)
-      return { candles, source: 'simulated' }
+      return { candles, source: 'simulated', provider: 'frankfurter_anchored' }
     }
   }
 
-  // 4. Pure simulation fallback
+  // 6. Pure simulation fallback
   const candles = generateCandles(pair, timeframe, count)
-  return { candles, source: 'simulated' }
+  return { candles, source: 'simulated', provider: 'synthetic' }
 }
 
 export async function getLiveRates(

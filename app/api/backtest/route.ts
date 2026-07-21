@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { candles, source } = await getCandles(pair, timeframe, bars)
+    const { candles, source, provider } = await getCandles(pair, timeframe, bars)
     if (candles.length < 100) {
       return NextResponse.json(
         { ok: false, error: `Only ${candles.length} candles available for ${pair} ${timeframe} — not enough to backtest` },
@@ -71,6 +71,8 @@ export async function GET(req: NextRequest) {
       pair,
       timeframe,
       dataSource: source,
+      provider, // which feed actually served the candles (oanda = deep history; yahoo = shallow)
+      barsRequested: bars,
       from: new Date(result.firstBarTime).toISOString(),
       to: new Date(result.lastBarTime).toISOString(),
       bars: result.bars,
