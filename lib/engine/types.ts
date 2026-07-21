@@ -233,7 +233,7 @@ export interface EngineSignal {
   expiresAt: number
   dataSource: 'live' | 'simulated'
   // Signal origin: internal scanner or TradingView webhook
-  source: 'engine' | 'tradingview'
+  source: 'engine' | 'tradingview' | 'ict-scanner'
   tvSetupType?: string // original chart-native setup name
   tvMode?: 'watchlist' | 'automation'
   chartUrl?: string

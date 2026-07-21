@@ -53,6 +53,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Server-side ICT scan: the sweep→MSS→confluence strategy (same code
+    // path the backtester measures) runs directly on live candles — ICT
+    // signals flow through the app without TradingView. Never fails the scan.
+    let ict: { pairsScanned: number; detected: number; approved: number; blocked: number; pushed: number; errors: string[] } = {
+      pairsScanned: 0, detected: 0, approved: 0, blocked: 0, pushed: 0, errors: [],
+    }
+    try {
+      const { scanIctSetups } = await import('@/lib/services/ict-scanner')
+      ict = await scanIctSetups(settings, journal)
+    } catch (e) {
+      ict.errors.push(e instanceof Error ? e.message : 'ict scan failed')
+    }
+
     // Outcome sweep: resolve previously stored signals against the candles
     // printed since they fired (hit_tp1/hit_tp2/stopped/expired). Never
     // fails the scan; feeds the win-rate/expectancy analytics.
@@ -75,6 +88,7 @@ export async function GET(req: NextRequest) {
       approvedSignals: approved.length,
       persisted,
       pushed,
+      ict,
       outcomes,
       errors,
     })

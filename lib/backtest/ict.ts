@@ -193,15 +193,40 @@ function bucketStats(trades: BacktestTrade[]): BacktestBucket {
   }
 }
 
-// ── The replay ───────────────────────────────────────────────────────
+// ── Entry generation (shared by the backtester and the live scanner) ─
 
-export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptions> = {}): IctBacktestResult {
+export interface IctEntryDetail {
+  barIndex: number
+  time: number
+  direction: 'long' | 'short'
+  entry: number
+  stop: number
+  target: number
+  confluenceScore: number
+  confirmations: string[]
+  session: 'london' | 'newyork' | 'other'
+  // Chart context at the entry bar (for downstream scoring/audit)
+  close: number
+  high: number
+  low: number
+  atr: number
+  emaFast: number
+  emaSlow: number
+  rsi: number
+  swingHigh: number
+  swingLow: number
+  triggerLevel: number
+}
+
+export function generateIctEntries(candles: Candle[], opts: Partial<IctBacktestOptions> = {}): IctEntryDetail[] {
   const o: IctBacktestOptions = { ...DEFAULT_ICT_OPTIONS, ...opts }
   const n = candles.length
   const closes = candles.map((c) => c.close)
   const atr = atrSeries(candles, o.atrLen)
   const rsi = rsiSeries(closes, 14)
   const htf = htfBiasSeries(candles)
+  const ema21 = emaSeries(closes, 21)
+  const ema50 = emaSeries(closes, 50)
 
   // State (mirrors the Pine vars)
   let lastSwingHigh = NaN, prevSwingHigh = NaN
@@ -210,7 +235,7 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
   let armedShort = false, sweepHigh = NaN, mssLowTgt = NaN
   let lastEntryBar = -1_000_000
 
-  const trades: BacktestTrade[] = []
+  const entries: IctEntryDetail[] = []
 
   const p = o.pivotLen
   for (let i = 0; i < n; i++) {
@@ -289,12 +314,36 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
     if (!dir) continue
     const sessionLabel: BacktestTrade['session'] = session ?? 'other'
 
-    // 4. Forward simulation (conservative: stop wins ambiguous bars)
+    entries.push({
+      barIndex: i, time: bar.time, direction: dir, entry, stop, target,
+      confluenceScore: confs.length, confirmations: confs, session: sessionLabel,
+      close: bar.close, high: bar.high, low: bar.low,
+      atr: atr[i], emaFast: ema21[i], emaSlow: ema50[i],
+      rsi: Number.isNaN(rsi[i]) ? 50 : rsi[i],
+      swingHigh: Number.isNaN(lastSwingHigh) ? bar.high : lastSwingHigh,
+      swingLow: Number.isNaN(lastSwingLow) ? bar.low : lastSwingLow,
+      triggerLevel: dir === 'long' ? mssHighTgt : mssLowTgt,
+    })
+    lastEntryBar = i
+  }
+
+  return entries
+}
+
+// ── The replay: entries + conservative forward simulation ────────────
+
+export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptions> = {}): IctBacktestResult {
+  const o: IctBacktestOptions = { ...DEFAULT_ICT_OPTIONS, ...opts }
+  const n = candles.length
+  const entries = generateIctEntries(candles, o)
+
+  const trades: BacktestTrade[] = entries.map((e) => {
+    const { barIndex: i, direction: dir, entry, stop, target } = e
     const sign = dir === 'long' ? 1 : -1
     const risk = Math.abs(entry - stop)
     let outcome: BacktestTrade['outcome'] = 'timeout'
     let rMultiple = 0
-    let exitTime = bar.time
+    let exitTime = e.time
     let holdBars = 0
     for (let j = i + 1; j < Math.min(n, i + 1 + o.maxHoldBars); j++) {
       const b = candles[j]
@@ -309,14 +358,12 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
         rMultiple = (sign * (b.close - entry)) / risk
       }
     }
-
-    trades.push({
-      entryTime: bar.time, exitTime, direction: dir, entry, stop, target,
-      confluenceScore: confs.length, confirmations: confs, session: sessionLabel,
+    return {
+      entryTime: e.time, exitTime, direction: dir, entry, stop, target,
+      confluenceScore: e.confluenceScore, confirmations: e.confirmations, session: e.session,
       outcome, rMultiple: Math.round(rMultiple * 100) / 100, holdBars,
-    })
-    lastEntryBar = i
-  }
+    }
+  })
 
   // Max drawdown on the cumulative R curve
   let peak = 0, dd = 0, cum = 0
