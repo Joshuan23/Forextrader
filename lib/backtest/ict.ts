@@ -346,6 +346,11 @@ export interface IctLiveState {
   mssBroken: boolean          // has price already closed through the MSS level?
   confirmationsReady: string[] // confluences currently satisfied
   confluenceScore: number
+  // Projected trade plan (fills on the MSS close; same level math as the scanner)
+  entry: number | null
+  stopLoss: number | null
+  takeProfit: number | null
+  riskReward: number | null
 }
 
 // Replays the identical sweep→MSS machine and returns the CURRENT state at
@@ -359,7 +364,8 @@ export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOpti
   const rsi = rsiSeries(closes, 14)
   const htf = htfBiasSeries(candles)
 
-  let lastSwingHigh = NaN, lastSwingLow = NaN
+  let lastSwingHigh = NaN, prevSwingHigh = NaN
+  let lastSwingLow = NaN, prevSwingLow = NaN
   let armedLong = false, sweepLow = NaN, mssHighTgt = NaN
   let armedShort = false, sweepHigh = NaN, mssLowTgt = NaN
   const p = o.pivotLen
@@ -374,8 +380,8 @@ export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOpti
         if (candles[k].low <= candles[c0].low) isPl = false
         if (!isPh && !isPl) break
       }
-      if (isPh) lastSwingHigh = candles[c0].high
-      if (isPl) lastSwingLow = candles[c0].low
+      if (isPh) { prevSwingHigh = lastSwingHigh; lastSwingHigh = candles[c0].high }
+      if (isPl) { prevSwingLow = lastSwingLow; lastSwingLow = candles[c0].low }
     }
     const bar = candles[i]
     if (!Number.isNaN(lastSwingLow) && bar.low < lastSwingLow && bar.close > lastSwingLow) {
@@ -415,7 +421,13 @@ export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOpti
     mssBroken: false,
     confirmationsReady: [],
     confluenceScore: 0,
+    entry: null,
+    stopLoss: null,
+    takeProfit: null,
+    riskReward: null,
   }
+
+  const round6 = (x: number) => Math.round(x * 1e6) / 1e6
 
   if (armedLong) {
     const eq = (mssHighTgt + sweepLow) / 2
@@ -423,7 +435,18 @@ export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOpti
       ['fvg', bullFvg], ['htf', htf[i] > 0], ['displacement', displacement],
       ['rsi', !Number.isNaN(rsi[i]) && rsi[i] > 50], ['discount', bar.close <= eq],
     ].filter(([, ok]) => ok).map(([name]) => name as string)
-    return { ...base, bias: 'armed_long', sweepLevel: sweepLow, mssTarget: mssHighTgt, mssBroken: bar.close > mssHighTgt, confirmationsReady: ready, confluenceScore: ready.length }
+    // Projected plan (same math as the scanner): enter on the MSS break,
+    // stop below the swept low, target opposing liquidity or minRR.
+    const entry = mssHighTgt
+    const stop = sweepLow - 0.1 * atr[i]
+    const risk = entry - stop
+    const target = !Number.isNaN(prevSwingHigh) && prevSwingHigh > entry + o.minRr * risk ? prevSwingHigh : entry + o.minRr * risk
+    return {
+      ...base, bias: 'armed_long', sweepLevel: sweepLow, mssTarget: mssHighTgt,
+      mssBroken: bar.close > mssHighTgt, confirmationsReady: ready, confluenceScore: ready.length,
+      entry: round6(entry), stopLoss: round6(stop), takeProfit: round6(target),
+      riskReward: risk > 0 ? Math.round(((target - entry) / risk) * 100) / 100 : null,
+    }
   }
   if (armedShort) {
     const eq = (sweepHigh + mssLowTgt) / 2
@@ -431,7 +454,16 @@ export function analyzeIctState(candles: Candle[], opts: Partial<IctBacktestOpti
       ['fvg', bearFvg], ['htf', htf[i] < 0], ['displacement', displacement],
       ['rsi', !Number.isNaN(rsi[i]) && rsi[i] < 50], ['premium', bar.close >= eq],
     ].filter(([, ok]) => ok).map(([name]) => name as string)
-    return { ...base, bias: 'armed_short', sweepLevel: sweepHigh, mssTarget: mssLowTgt, mssBroken: bar.close < mssLowTgt, confirmationsReady: ready, confluenceScore: ready.length }
+    const entry = mssLowTgt
+    const stop = sweepHigh + 0.1 * atr[i]
+    const risk = stop - entry
+    const target = !Number.isNaN(prevSwingLow) && prevSwingLow < entry - o.minRr * risk ? prevSwingLow : entry - o.minRr * risk
+    return {
+      ...base, bias: 'armed_short', sweepLevel: sweepHigh, mssTarget: mssLowTgt,
+      mssBroken: bar.close < mssLowTgt, confirmationsReady: ready, confluenceScore: ready.length,
+      entry: round6(entry), stopLoss: round6(stop), takeProfit: round6(target),
+      riskReward: risk > 0 ? Math.round(((entry - target) / risk) * 100) / 100 : null,
+    }
   }
   return base
 }
