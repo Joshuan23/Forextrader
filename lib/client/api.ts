@@ -96,3 +96,53 @@ export interface IctWatchResponse {
 export function fetchIctWatch(): Promise<IctWatchResponse> {
   return getJson<IctWatchResponse>('/api/ict/watch')
 }
+
+export interface Poi {
+  kind: 'FVG' | 'OrderBlock'
+  direction: 'long' | 'short'
+  top: number
+  bottom: number
+  entry: number
+  stopLoss: number
+  takeProfit: number
+  riskReward: number
+  distancePips: number
+}
+export interface PoiPair {
+  symbol: string
+  name?: string
+  status?: string
+  lastClose?: number
+  pois?: Poi[]
+}
+export interface PoiResponse {
+  scannedAt: string
+  timeframe: string
+  note: string
+  pairs: PoiPair[]
+}
+export function fetchPoi(): Promise<PoiResponse> {
+  return getJson<PoiResponse>('/api/ict/poi')
+}
+
+export interface DomBook {
+  above: { price: number; percent: number }[]
+  below: { price: number; percent: number }[]
+}
+export interface DomPair {
+  symbol: string
+  name?: string
+  price?: number | null
+  orderBook?: DomBook | null
+  positionBook?: DomBook | null
+  error?: string
+}
+export interface DomResponse {
+  scannedAt: string
+  oandaConfigured: boolean
+  note: string
+  pairs: DomPair[]
+}
+export function fetchDom(): Promise<DomResponse> {
+  return getJson<DomResponse>('/api/ict/dom')
+}
