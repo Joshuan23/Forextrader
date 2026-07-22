@@ -21,7 +21,9 @@ export function isConfigured(): boolean {
 }
 
 function baseUrl(): string {
-  return process.env.OANDA_API_URL || PRACTICE_URL
+  // Strip trailing slashes: "https://host/" + "/v3/..." would become
+  // "host//v3/..." which OANDA fails to route (UnableToRouteException).
+  return (process.env.OANDA_API_URL || PRACTICE_URL).replace(/\/+$/, '')
 }
 
 // OANDA instruments use underscores; indices/metals have dedicated tickers.
