@@ -45,6 +45,29 @@ export function IctWatchList({ pairs }: { pairs: IctWatchPair[] }) {
 
             <p className="mt-3 text-xs leading-5 text-foreground">{p.waitingFor}</p>
 
+            {p.bias !== 'neutral' && p.entry != null && (
+              <div className="mt-3 rounded-md border border-border bg-background/50 p-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Projected trade plan
+                  </span>
+                  {p.riskReward != null && (
+                    <span className="text-[11px] font-semibold text-primary">{p.riskReward}R</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <Plan label="Entry" value={p.entry} />
+                  <Plan label="Stop" value={p.stopLoss} tone="short" />
+                  <Plan label="Target" value={p.takeProfit} tone="long" />
+                </div>
+                {p.riskPips != null && (
+                  <div className="mt-1.5 text-center text-[10px] text-muted-foreground">
+                    Risk {p.riskPips} pips · fills on the 15m MSS close
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
               <Row label="Last" value={p.lastClose != null ? String(p.lastClose) : '—'} />
               <Row label="HTF bias" value={(p.htfBias ?? 'neutral').toUpperCase()} accent={p.htfBias === 'up' ? 'long' : p.htfBias === 'down' ? 'short' : undefined} />
@@ -85,6 +108,17 @@ export function IctWatchList({ pairs }: { pairs: IctWatchPair[] }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function Plan({ label, value, tone }: { label: string; value?: number | null; tone?: 'long' | 'short' }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`font-mono text-xs font-semibold ${tone === 'long' ? 'text-long' : tone === 'short' ? 'text-short' : 'text-foreground'}`}>
+        {value ?? '—'}
+      </div>
     </div>
   )
 }

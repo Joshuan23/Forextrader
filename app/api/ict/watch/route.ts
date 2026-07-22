@@ -88,6 +88,12 @@ export async function GET() {
             pipsToTarget: pipsTo(s.mssTarget),
             confluencesReady: s.confirmationsReady.map((c) => CONFLUENCE_LABEL[c] ?? c),
             confluenceScore: s.confluenceScore,
+            // Projected trade plan for the armed setup
+            entry: fmt(s.entry),
+            stopLoss: fmt(s.stopLoss),
+            takeProfit: fmt(s.takeProfit),
+            riskReward: s.riskReward,
+            riskPips: s.entry != null && s.stopLoss != null ? Math.round((Math.abs(s.entry - s.stopLoss) / pip) * 10) / 10 : null,
             waitingFor,
             liquidity, // DOM: { above:[{price,percent}], below:[{price,percent}] } | null
             drawOnLiquidity: drawTarget

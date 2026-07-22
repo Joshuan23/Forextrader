@@ -76,6 +76,11 @@ export interface IctWatchPair {
   pipsToTarget?: number | null
   confluencesReady?: string[]
   confluenceScore?: number
+  entry?: number | null
+  stopLoss?: number | null
+  takeProfit?: number | null
+  riskReward?: number | null
+  riskPips?: number | null
   waitingFor?: string
   liquidity?: { above: { price: number; percent: number }[]; below: { price: number; percent: number }[] } | null
   drawOnLiquidity?: string | null
