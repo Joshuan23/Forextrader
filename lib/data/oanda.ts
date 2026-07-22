@@ -129,6 +129,39 @@ export function fetchPositionBook(pair: string): Promise<BookAnalysis | null> {
   return fetchBook(pair, 'positionBook')
 }
 
+// Diagnostic: call OANDA directly and surface the REAL status/error so a
+// misconfigured token/environment is visible instead of silently falling
+// back to Yahoo. Never returns the token itself.
+export async function diagnoseOanda(pair = 'EUR/USD'): Promise<Record<string, unknown>> {
+  const tokenSet = Boolean(process.env.OANDA_API_TOKEN)
+  const out: Record<string, unknown> = {
+    tokenSet,
+    apiUrl: baseUrl(),
+    environment: baseUrl().includes('fxpractice') ? 'practice' : 'live',
+    instrument: toInstrument(pair),
+  }
+  if (!tokenSet) {
+    out.error = 'OANDA_API_TOKEN is not set'
+    return out
+  }
+  try {
+    const res = await oandaGet(`/v3/instruments/${toInstrument(pair)}/candles?granularity=H1&count=1&price=M`)
+    out.candlesStatus = res.status
+    if (res.ok) out.candlesOk = true
+    else out.candlesBody = (await res.text()).slice(0, 400)
+  } catch (e) {
+    out.candlesError = e instanceof Error ? e.message : 'fetch failed'
+  }
+  try {
+    const ob = await oandaGet(`/v3/instruments/${toInstrument(pair)}/orderBook`)
+    out.orderBookStatus = ob.status
+    if (!ob.ok) out.orderBookBody = (await ob.text()).slice(0, 400)
+  } catch (e) {
+    out.orderBookError = e instanceof Error ? e.message : 'fetch failed'
+  }
+  return out
+}
+
 interface OhlcStrings {
   o: string
   h: string
