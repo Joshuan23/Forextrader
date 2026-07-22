@@ -129,17 +129,26 @@ export interface DomBook {
   above: { price: number; percent: number }[]
   below: { price: number; percent: number }[]
 }
+export interface DomSentiment {
+  longPct: number
+  shortPct: number
+  longPrice: number | null
+  shortPrice: number | null
+}
 export interface DomPair {
   symbol: string
   name?: string
   price?: number | null
   orderBook?: DomBook | null
   positionBook?: DomBook | null
+  sentiment?: DomSentiment | null
   error?: string
 }
 export interface DomResponse {
   scannedAt: string
   oandaConfigured: boolean
+  myfxbookConfigured: boolean
+  sentimentAvailable: boolean
   note: string
   pairs: DomPair[]
 }

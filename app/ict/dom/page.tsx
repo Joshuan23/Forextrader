@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { fetchDom, type DomResponse, type DomBook } from '@/lib/client/api'
+import { fetchDom, type DomResponse, type DomBook, type DomSentiment } from '@/lib/client/api'
 import { IctTabs } from '@/components/flowedge/ict-tabs'
 import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 
@@ -31,16 +31,16 @@ export default function DomPage() {
       {error ? (
         <ErrorState error={error} retry={load} />
       ) : !data ? (
-        <LoadingState label="Reading order books…" />
-      ) : !data.oandaConfigured ? (
+        <LoadingState label="Reading liquidity data…" />
+      ) : !data.sentimentAvailable && !data.oandaConfigured ? (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {data.note}
+          No DOM source configured. Set <span className="font-mono">MYFXBOOK_EMAIL</span> / <span className="font-mono">MYFXBOOK_PASSWORD</span> (free retail sentiment) or an OANDA order-book token.
         </div>
       ) : (
         <>
           <div className="space-y-3">
             {data.pairs.map((p) => {
-              const hasData = (p.orderBook && (p.orderBook.above.length || p.orderBook.below.length)) ||
+              const hasBook = (p.orderBook && (p.orderBook.above.length || p.orderBook.below.length)) ||
                 (p.positionBook && (p.positionBook.above.length || p.positionBook.below.length))
               return (
                 <div key={p.symbol} className="rounded-lg border bg-card p-4">
@@ -48,12 +48,15 @@ export default function DomPage() {
                     <div className="font-mono text-sm font-semibold">{p.symbol}</div>
                     <div className="text-[11px] text-muted-foreground">{p.price != null ? `@ ${p.price}` : ''}</div>
                   </div>
-                  {!hasData ? (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {p.error ? `Unavailable: ${p.error}` : 'No order-book data for this instrument.'}
-                    </div>
+
+                  {p.sentiment ? (
+                    <Sentiment s={p.sentiment} />
                   ) : (
-                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <div className="mt-2 text-xs text-muted-foreground">No retail-sentiment data for this pair.</div>
+                  )}
+
+                  {hasBook && (
+                    <div className="mt-3 grid gap-4 border-t border-border pt-3 sm:grid-cols-2">
                       <Book title="Order Book (resting orders + stops)" book={p.orderBook} />
                       <Book title="Position Book (open positions)" book={p.positionBook} />
                     </div>
@@ -65,6 +68,29 @@ export default function DomPage() {
           <p className="text-[11px] leading-5 text-muted-foreground">{data.note}</p>
         </>
       )}
+    </div>
+  )
+}
+
+function Sentiment({ s }: { s: DomSentiment }) {
+  const longW = Math.max(0, Math.min(100, s.longPct))
+  return (
+    <div className="mt-3">
+      <div className="mb-1 flex items-center justify-between text-[11px]">
+        <span className="font-semibold text-long">{s.longPct}% Long</span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Retail positioning</span>
+        <span className="font-semibold text-short">{s.shortPct}% Short</span>
+      </div>
+      <div className="flex h-2.5 overflow-hidden rounded bg-short/30">
+        <span className="h-full bg-long/60" style={{ width: `${longW}%` }} />
+      </div>
+      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
+        <span>Avg long entry: <span className="font-mono text-long">{s.longPrice ?? '—'}</span></span>
+        <span>Avg short entry: <span className="font-mono text-short">{s.shortPrice ?? '—'}</span></span>
+      </div>
+      <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+        The crowded side&apos;s stops sit beyond their average entry — that&apos;s the liquidity price is drawn to.
+      </p>
     </div>
   )
 }
