@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { fetchIctWatch, type IctWatchResponse } from '@/lib/client/api'
 import { IctWatchList } from '@/components/flowedge/ict-watch'
+import { IctTabs } from '@/components/flowedge/ict-tabs'
 import { ErrorState, LoadingState } from '@/components/flowedge/data-state'
 
 const REFRESH_MS = 60_000
@@ -61,6 +62,8 @@ export default function IctWatchPage() {
           {updatedAt ? updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Refresh'}
         </button>
       </div>
+
+      <IctTabs />
 
       {error ? (
         <ErrorState error={error} retry={() => load()} />
