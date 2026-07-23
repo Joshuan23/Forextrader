@@ -179,7 +179,7 @@ function sessionOf(timeMs: number): 'london' | 'newyork' | null {
   return null
 }
 
-function bucketStats(trades: BacktestTrade[]): BacktestBucket {
+export function bucketStats(trades: BacktestTrade[]): BacktestBucket {
   // A partial (banked 1R then stopped at breakeven) is a positive-outcome win.
   const wins = trades.filter((t) => t.outcome === 'win' || t.outcome === 'partial').length
   const losses = trades.filter((t) => t.outcome === 'loss').length
