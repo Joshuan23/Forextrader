@@ -64,12 +64,23 @@ export async function GET(req: NextRequest) {
     const applyCosts = bool('costs', true)
     const spreadPrice = applyCosts ? spreadPips * pipSize : 0
 
+    // Fixed-distance SL/TP in pips (override ICT structure). 0 = structure-based.
+    const stopPips = Math.max(0, Number(q.get('stopPips')) || 0)
+    const tpPips = Math.max(0, Number(q.get('tpPips')) || 0)
+    const fixedStopPrice = stopPips * pipSize
+    const fixedTpPrice = tpPips * pipSize
+    // ?noTimeout=1 (or maxHoldBars=0) removes the force-exit horizon entirely.
+    const noTimeout = bool('noTimeout', false)
+    const maxHoldBars = noTimeout ? 0 : num('maxHoldBars', DEFAULT_ICT_OPTIONS.maxHoldBars)
+
     const result = runIctBacktest(candles, {
       spreadPrice,
+      fixedStopPrice,
+      fixedTpPrice,
       pivotLen: num('pivotLen', DEFAULT_ICT_OPTIONS.pivotLen),
       minRr: num('minRr', DEFAULT_ICT_OPTIONS.minRr),
       cooldown: num('cooldown', DEFAULT_ICT_OPTIONS.cooldown),
-      maxHoldBars: num('maxHoldBars', DEFAULT_ICT_OPTIONS.maxHoldBars),
+      maxHoldBars,
       minConfl: Math.min(5, Math.max(1, num('minConfl', DEFAULT_ICT_OPTIONS.minConfl))),
       requireFvg: bool('requireFvg', DEFAULT_ICT_OPTIONS.requireFvg),
       useHtfBias: bool('useHtfBias', DEFAULT_ICT_OPTIONS.useHtfBias),
@@ -97,6 +108,11 @@ export async function GET(req: NextRequest) {
       byDirection: result.byDirection,
       maxDrawdownR: result.maxDrawdownR,
       costs: { applied: applyCosts, spreadPips, spreadPrice: Math.round(spreadPrice * 1e6) / 1e6 },
+      exits: {
+        fixedStopPips: stopPips || null,
+        fixedTpPips: tpPips || null,
+        timeout: noTimeout ? 'disabled' : `${maxHoldBars} bars`,
+      },
       note: 'NET of spread cost (deducted from every trade in R). Conservative fills: when a bar spans both stop and target, the stop wins. Past performance does not guarantee future results.',
       trades: includeTrades ? result.trades : undefined,
       tradeCount: result.trades.length,

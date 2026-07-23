@@ -33,6 +33,12 @@ export interface IctBacktestOptions {
                         // deducted from every trade's R so results are NET, not gross.
                         // 0 = frictionless (old behaviour). Matters most where the spread
                         // is large relative to ICT's tight sweep stops (metals, indices).
+  fixedStopPrice: number // if >0, override the structure stop with a FIXED distance in
+                         // price units (entry ∓ this). 0 = ICT sweep-based stop.
+  fixedTpPrice: number   // if >0, override the target with a FIXED distance in price
+                         // units (entry ± this). 0 = structure/minRR target.
+  // maxHoldBars <= 0 means NO timeout: hold each trade until stop or target
+  // resolves it (or data runs out). Kills the "timeout" bucket entirely.
 }
 
 export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
@@ -48,6 +54,8 @@ export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
   session: 'both',
   partialTp: false,
   spreadPrice: 0,
+  fixedStopPrice: 0,
+  fixedTpPrice: 0,
 }
 
 export interface BacktestTrade {
@@ -301,9 +309,11 @@ export function generateIctEntries(candles: Candle[], opts: Partial<IctBacktestO
       if (gate) {
         dir = 'long'
         entry = bar.close
-        stop = sweepLow - 0.1 * atr[i]
+        stop = o.fixedStopPrice > 0 ? entry - o.fixedStopPrice : sweepLow - 0.1 * atr[i]
         const risk = entry - stop
-        target = !Number.isNaN(prevSwingHigh) && prevSwingHigh > entry + o.minRr * risk ? prevSwingHigh : entry + o.minRr * risk
+        target = o.fixedTpPrice > 0
+          ? entry + o.fixedTpPrice
+          : !Number.isNaN(prevSwingHigh) && prevSwingHigh > entry + o.minRr * risk ? prevSwingHigh : entry + o.minRr * risk
         armedLong = false
       }
     } else if (armedShort && !Number.isNaN(mssLowTgt) && bar.close < mssLowTgt) {
@@ -317,9 +327,11 @@ export function generateIctEntries(candles: Candle[], opts: Partial<IctBacktestO
       if (gate) {
         dir = 'short'
         entry = bar.close
-        stop = sweepHigh + 0.1 * atr[i]
+        stop = o.fixedStopPrice > 0 ? entry + o.fixedStopPrice : sweepHigh + 0.1 * atr[i]
         const risk = stop - entry
-        target = !Number.isNaN(prevSwingLow) && prevSwingLow < entry - o.minRr * risk ? prevSwingLow : entry - o.minRr * risk
+        target = o.fixedTpPrice > 0
+          ? entry - o.fixedTpPrice
+          : !Number.isNaN(prevSwingLow) && prevSwingLow < entry - o.minRr * risk ? prevSwingLow : entry - o.minRr * risk
         armedShort = false
       }
     }
@@ -500,8 +512,10 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
     let exitTime = e.time
     let holdBars = 0
     let tp1Banked = false // partial mode: booked half at 1R, stop now at breakeven
-    const lastJ = Math.min(n, i + 1 + o.maxHoldBars) - 1
-    for (let j = i + 1; j < Math.min(n, i + 1 + o.maxHoldBars); j++) {
+    // maxHoldBars <= 0 → no timeout: run to the end of data (resolves on stop/target).
+    const holdCap = o.maxHoldBars > 0 ? o.maxHoldBars : n
+    const lastJ = Math.min(n, i + 1 + holdCap) - 1
+    for (let j = i + 1; j < Math.min(n, i + 1 + holdCap); j++) {
       const b = candles[j]
       holdBars = j - i
       exitTime = b.time
