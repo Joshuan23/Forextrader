@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCandles } from '@/lib/data/provider'
 import { runIctBacktest, DEFAULT_ICT_OPTIONS } from '@/lib/backtest/ict'
+import { getPairBySymbol } from '@/lib/forex/pairs'
 import { errorResponse } from '@/lib/config/runtime'
 import type { Timeframe } from '@/types/forex'
 
@@ -54,7 +55,17 @@ export async function GET(req: NextRequest) {
         { status: 422 }
       )
     }
+    // Transaction cost (NET results). Default = the pair's typical spread in
+    // price units; ?costs=0 disables it, ?spreadPips=N overrides the pip count.
+    const cfg = getPairBySymbol(pair)
+    const pipSize = cfg?.pipSize ?? 0.0001
+    const defaultSpreadPips = cfg?.spread ?? 0.5
+    const spreadPips = num('spreadPips', defaultSpreadPips)
+    const applyCosts = bool('costs', true)
+    const spreadPrice = applyCosts ? spreadPips * pipSize : 0
+
     const result = runIctBacktest(candles, {
+      spreadPrice,
       pivotLen: num('pivotLen', DEFAULT_ICT_OPTIONS.pivotLen),
       minRr: num('minRr', DEFAULT_ICT_OPTIONS.minRr),
       cooldown: num('cooldown', DEFAULT_ICT_OPTIONS.cooldown),
@@ -85,7 +96,8 @@ export async function GET(req: NextRequest) {
       byConfirmation: result.byConfirmation,
       byDirection: result.byDirection,
       maxDrawdownR: result.maxDrawdownR,
-      note: 'Conservative fills: when a bar spans both stop and target, the stop wins. Past performance does not guarantee future results.',
+      costs: { applied: applyCosts, spreadPips, spreadPrice: Math.round(spreadPrice * 1e6) / 1e6 },
+      note: 'NET of spread cost (deducted from every trade in R). Conservative fills: when a bar spans both stop and target, the stop wins. Past performance does not guarantee future results.',
       trades: includeTrades ? result.trades : undefined,
       tradeCount: result.trades.length,
     })

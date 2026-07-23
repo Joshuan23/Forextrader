@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCandles } from '@/lib/data/provider'
 import { runIctBacktest, bucketStats, type IctBacktestOptions, type BacktestTrade } from '@/lib/backtest/ict'
+import { getPairBySymbol } from '@/lib/forex/pairs'
 import { getSettings } from '@/lib/store/settings'
 import { errorResponse } from '@/lib/config/runtime'
 import type { Candle, Timeframe } from '@/types/forex'
@@ -52,11 +53,15 @@ export async function GET(req: NextRequest) {
     const pairArg = q.get('pair') ?? 'all'
     const symbols = pairArg === 'all' ? settings.pairWhitelist : [pairArg]
 
-    // Fetch candles ONCE per pair (reused across every config).
-    const data: { symbol: string; candles: Candle[]; provider: string }[] = []
+    // Fetch candles ONCE per pair (reused across every config). Costs (NET
+    // results) default on; ?costs=0 disables. Spread is per-pair in price units.
+    const applyCosts = (q.get('costs') ?? '1') !== '0' && (q.get('costs') ?? 'true') !== 'false'
+    const data: { symbol: string; candles: Candle[]; provider: string; spreadPrice: number }[] = []
     for (const symbol of symbols) {
       const { candles, provider } = await getCandles(symbol, timeframe, bars)
-      if (candles.length >= 200) data.push({ symbol, candles, provider })
+      const cfg = getPairBySymbol(symbol)
+      const spreadPrice = applyCosts ? (cfg?.spread ?? 0.5) * (cfg?.pipSize ?? 0.0001) : 0
+      if (candles.length >= 200) data.push({ symbol, candles, provider, spreadPrice })
     }
     if (data.length === 0) {
       return NextResponse.json({ ok: false, error: 'no pairs returned enough candles to optimize' }, { status: 422 })
@@ -66,7 +71,7 @@ export async function GET(req: NextRequest) {
     const ranked = configs
       .map((cfg) => {
         const trades: BacktestTrade[] = []
-        for (const d of data) trades.push(...runIctBacktest(d.candles, cfg).trades)
+        for (const d of data) trades.push(...runIctBacktest(d.candles, { ...cfg, spreadPrice: d.spreadPrice }).trades)
         const stats = bucketStats(trades)
         const totalR = Math.round(stats.expectancyR * stats.trades * 100) / 100
         return {
@@ -95,7 +100,8 @@ export async function GET(req: NextRequest) {
       barsPerPair: bars,
       minTrades,
       combosTested: configs.length,
-      note: 'Ranked by TOTAL RETURN (sum of R across all trades). Configs under minTrades are excluded as too noisy. Past performance does not guarantee future results.',
+      costsApplied: applyCosts,
+      note: 'NET of per-pair spread cost. Ranked by TOTAL RETURN (sum of R across all trades). Configs under minTrades are excluded as too noisy. Past performance does not guarantee future results.',
       best: ranked[0] ?? null,
       leaderboard: ranked.slice(0, 10),
     })
