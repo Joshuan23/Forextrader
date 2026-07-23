@@ -89,11 +89,19 @@ export async function GET(req: NextRequest) {
       partialTp: bool('partialTp', DEFAULT_ICT_OPTIONS.partialTp),
     })
 
+    // Break-even win rate: the % of wins you need just to not lose money at
+    // this reward:risk (before costs). Beat it and the edge is positive.
+    // Fixed TP → rr = tp/stop; otherwise use the configured minRR target.
+    const rr = tpPips > 0 && stopPips > 0 ? tpPips / stopPips : result.options.minRr
+    const breakevenWinRatePct = Math.round((100 / (1 + rr)) * 10) / 10
+
     const includeTrades = bool('trades', false)
     return NextResponse.json({
       ok: true,
       pair,
       timeframe,
+      breakevenWinRatePct, // beat this win rate and you're profitable at this RR
+      rewardRisk: Math.round(rr * 100) / 100,
       dataSource: source,
       provider, // which feed actually served the candles (oanda = deep history; yahoo = shallow)
       barsRequested: bars,
