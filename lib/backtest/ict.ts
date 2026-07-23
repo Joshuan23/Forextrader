@@ -79,6 +79,8 @@ export interface IctBacktestResult {
   overall: BacktestBucket
   byConfluence: Record<string, BacktestBucket>
   bySession: Record<string, BacktestBucket>
+  byConfirmation: Record<string, BacktestBucket> // edge of each individual confluence
+  byDirection: Record<string, BacktestBucket>
   maxDrawdownR: number
   trades: BacktestTrade[]
 }
@@ -548,6 +550,20 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
     const subset = trades.filter((t) => t.session === s)
     if (subset.length) bySession[s] = bucketStats(subset)
   }
+  // Per-confirmation attribution: the win rate/expectancy of trades that
+  // INCLUDED each individual confluence — reveals which factors carry edge
+  // (require those) and which are noise (drop them). This is how you improve
+  // the bad performers instead of just cutting subsets blindly.
+  const byConfirmation: Record<string, BacktestBucket> = {}
+  for (const conf of ['fvg', 'htf', 'displacement', 'rsi', 'discount', 'premium']) {
+    const withIt = trades.filter((t) => t.confirmations.includes(conf))
+    if (withIt.length) byConfirmation[conf] = bucketStats(withIt)
+  }
+  const byDirection: Record<string, BacktestBucket> = {}
+  for (const d of ['long', 'short'] as const) {
+    const subset = trades.filter((t) => t.direction === d)
+    if (subset.length) byDirection[d] = bucketStats(subset)
+  }
 
   return {
     bars: n,
@@ -557,6 +573,8 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
     overall: bucketStats(trades),
     byConfluence,
     bySession,
+    byConfirmation,
+    byDirection,
     maxDrawdownR: Math.round(dd * 100) / 100,
     trades,
   }

@@ -82,6 +82,8 @@ export async function GET(req: NextRequest) {
       overall: result.overall,
       byConfluence: result.byConfluence,
       bySession: result.bySession,
+      byConfirmation: result.byConfirmation,
+      byDirection: result.byDirection,
       maxDrawdownR: result.maxDrawdownR,
       note: 'Conservative fills: when a bar spans both stop and target, the stop wins. Past performance does not guarantee future results.',
       trades: includeTrades ? result.trades : undefined,
