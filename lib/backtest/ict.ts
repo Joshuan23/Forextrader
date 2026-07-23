@@ -27,6 +27,8 @@ export interface IctBacktestOptions {
   minConfl: number      // 1..5 confluences required
   killOnly: boolean     // London/NY kill zones only
   maxHoldBars: number   // force-exit horizon
+  session: 'london' | 'newyork' | 'both' // restrict to one kill zone
+  partialTp: boolean    // bank half at 1R, move stop to breakeven, run the rest
 }
 
 export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
@@ -39,6 +41,8 @@ export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
   minConfl: 3,
   killOnly: true,
   maxHoldBars: 96,
+  session: 'both',
+  partialTp: false,
 }
 
 export interface BacktestTrade {
@@ -51,7 +55,7 @@ export interface BacktestTrade {
   confluenceScore: number
   confirmations: string[]
   session: 'london' | 'newyork' | 'other'
-  outcome: 'win' | 'loss' | 'timeout'
+  outcome: 'win' | 'partial' | 'loss' | 'timeout'
   rMultiple: number
   holdBars: number
 }
@@ -174,7 +178,8 @@ function sessionOf(timeMs: number): 'london' | 'newyork' | null {
 }
 
 function bucketStats(trades: BacktestTrade[]): BacktestBucket {
-  const wins = trades.filter((t) => t.outcome === 'win').length
+  // A partial (banked 1R then stopped at breakeven) is a positive-outcome win.
+  const wins = trades.filter((t) => t.outcome === 'win' || t.outcome === 'partial').length
   const losses = trades.filter((t) => t.outcome === 'loss').length
   const timeouts = trades.filter((t) => t.outcome === 'timeout').length
   const grossWin = trades.filter((t) => t.rMultiple > 0).reduce((a, t) => a + t.rMultiple, 0)
@@ -313,6 +318,8 @@ export function generateIctEntries(candles: Candle[], opts: Partial<IctBacktestO
     }
     if (!dir) continue
     const sessionLabel: BacktestTrade['session'] = session ?? 'other'
+    // Session restriction (data showed London >> New York)
+    if (o.session !== 'both' && sessionLabel !== o.session) continue
 
     entries.push({
       barIndex: i, time: bar.time, direction: dir, entry, stop, target,
@@ -479,21 +486,41 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
     const { barIndex: i, direction: dir, entry, stop, target } = e
     const sign = dir === 'long' ? 1 : -1
     const risk = Math.abs(entry - stop)
+    const targetR = (sign * (target - entry)) / risk
+    const tp1 = entry + sign * risk // 1R
     let outcome: BacktestTrade['outcome'] = 'timeout'
     let rMultiple = 0
     let exitTime = e.time
     let holdBars = 0
+    let tp1Banked = false // partial mode: booked half at 1R, stop now at breakeven
+    const lastJ = Math.min(n, i + 1 + o.maxHoldBars) - 1
     for (let j = i + 1; j < Math.min(n, i + 1 + o.maxHoldBars); j++) {
       const b = candles[j]
       holdBars = j - i
       exitTime = b.time
       const stopHit = dir === 'long' ? b.low <= stop : b.high >= stop
       const tgtHit = dir === 'long' ? b.high >= target : b.low <= target
-      if (stopHit) { outcome = 'loss'; rMultiple = -1; break }
-      if (tgtHit) { outcome = 'win'; rMultiple = (sign * (target - entry)) / risk; break }
-      if (j === Math.min(n, i + 1 + o.maxHoldBars) - 1) {
+      const tp1Hit = dir === 'long' ? b.high >= tp1 : b.low <= tp1
+      const beHit = dir === 'long' ? b.low <= entry : b.high >= entry // breakeven after TP1
+
+      if (!o.partialTp) {
+        // Full position: stop wins ambiguous bars (conservative)
+        if (stopHit) { outcome = 'loss'; rMultiple = -1; break }
+        if (tgtHit) { outcome = 'win'; rMultiple = targetR; break }
+      } else if (!tp1Banked) {
+        // Before TP1: original stop is live; conservative stop-first
+        if (stopHit) { outcome = 'loss'; rMultiple = -1; break }
+        if (tp1Hit) { tp1Banked = true } // bank +0.5R, move stop to breakeven
+      } else {
+        // After TP1: half booked (+0.5R), remainder rides to target or breakeven
+        if (beHit) { outcome = 'partial'; rMultiple = 0.5; break } // 0.5R + 0 on runner
+        if (tgtHit) { outcome = 'win'; rMultiple = 0.5 + 0.5 * targetR; break }
+      }
+
+      if (j === lastJ) {
         outcome = 'timeout'
-        rMultiple = (sign * (b.close - entry)) / risk
+        const runnerR = (sign * (b.close - entry)) / risk
+        rMultiple = o.partialTp && tp1Banked ? 0.5 + 0.5 * runnerR : runnerR
       }
     }
     return {

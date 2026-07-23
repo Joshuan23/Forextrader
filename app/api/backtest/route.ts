@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
       requireFvg: bool('requireFvg', DEFAULT_ICT_OPTIONS.requireFvg),
       useHtfBias: bool('useHtfBias', DEFAULT_ICT_OPTIONS.useHtfBias),
       killOnly: bool('killOnly', DEFAULT_ICT_OPTIONS.killOnly),
+      session: (['london', 'newyork', 'both'].includes(q.get('session') ?? '') ? q.get('session') : DEFAULT_ICT_OPTIONS.session) as 'london' | 'newyork' | 'both',
+      partialTp: bool('partialTp', DEFAULT_ICT_OPTIONS.partialTp),
     })
 
     const includeTrades = bool('trades', false)
