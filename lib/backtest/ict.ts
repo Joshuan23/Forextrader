@@ -29,6 +29,10 @@ export interface IctBacktestOptions {
   maxHoldBars: number   // force-exit horizon
   session: 'london' | 'newyork' | 'both' // restrict to one kill zone
   partialTp: boolean    // bank half at 1R, move stop to breakeven, run the rest
+  spreadPrice: number   // round-trip transaction cost in PRICE units (e.g. gold $0.35);
+                        // deducted from every trade's R so results are NET, not gross.
+                        // 0 = frictionless (old behaviour). Matters most where the spread
+                        // is large relative to ICT's tight sweep stops (metals, indices).
 }
 
 export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
@@ -43,6 +47,7 @@ export const DEFAULT_ICT_OPTIONS: IctBacktestOptions = {
   maxHoldBars: 96,
   session: 'both',
   partialTp: false,
+  spreadPrice: 0,
 }
 
 export interface BacktestTrade {
@@ -525,6 +530,12 @@ export function runIctBacktest(candles: Candle[], opts: Partial<IctBacktestOptio
         rMultiple = o.partialTp && tp1Banked ? 0.5 + 0.5 * runnerR : runnerR
       }
     }
+    // Transaction cost: the spread is paid once per round trip regardless of
+    // outcome, so express it in R (cost / risk) and deduct from the result.
+    // For tight FX pairs this is ~0.02R; for gold it can be a meaningful
+    // fraction of R, which is exactly why gross backtests flatter metals.
+    const costR = o.spreadPrice > 0 && risk > 0 ? o.spreadPrice / risk : 0
+    rMultiple -= costR
     return {
       entryTime: e.time, exitTime, direction: dir, entry, stop, target,
       confluenceScore: e.confluenceScore, confirmations: e.confirmations, session: e.session,
