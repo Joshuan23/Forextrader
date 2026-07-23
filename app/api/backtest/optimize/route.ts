@@ -56,12 +56,21 @@ export async function GET(req: NextRequest) {
     // Fetch candles ONCE per pair (reused across every config). Costs (NET
     // results) default on; ?costs=0 disables. Spread is per-pair in price units.
     const applyCosts = (q.get('costs') ?? '1') !== '0' && (q.get('costs') ?? 'true') !== 'false'
-    const data: { symbol: string; candles: Candle[]; provider: string; spreadPrice: number }[] = []
+    // Fixed-distance SL/TP (in pips) + no-timeout — same overrides as /api/backtest.
+    // When set, every config in the sweep uses this fixed risk model instead of
+    // ICT structure exits, so you tune session/minConfl/partialTp under it.
+    const stopPips = Math.max(0, Number(q.get('stopPips')) || 0)
+    const tpPips = Math.max(0, Number(q.get('tpPips')) || 0)
+    const noTimeout = (q.get('noTimeout') ?? '') === '1' || (q.get('noTimeout') ?? '') === 'true'
+    const data: { symbol: string; candles: Candle[]; provider: string; spreadPrice: number; fixedStopPrice: number; fixedTpPrice: number }[] = []
     for (const symbol of symbols) {
       const { candles, provider } = await getCandles(symbol, timeframe, bars)
       const cfg = getPairBySymbol(symbol)
-      const spreadPrice = applyCosts ? (cfg?.spread ?? 0.5) * (cfg?.pipSize ?? 0.0001) : 0
-      if (candles.length >= 200) data.push({ symbol, candles, provider, spreadPrice })
+      const pipSize = cfg?.pipSize ?? 0.0001
+      const spreadPrice = applyCosts ? (cfg?.spread ?? 0.5) * pipSize : 0
+      if (candles.length >= 200) {
+        data.push({ symbol, candles, provider, spreadPrice, fixedStopPrice: stopPips * pipSize, fixedTpPrice: tpPips * pipSize })
+      }
     }
     if (data.length === 0) {
       return NextResponse.json({ ok: false, error: 'no pairs returned enough candles to optimize' }, { status: 422 })
@@ -71,7 +80,13 @@ export async function GET(req: NextRequest) {
     const ranked = configs
       .map((cfg) => {
         const trades: BacktestTrade[] = []
-        for (const d of data) trades.push(...runIctBacktest(d.candles, { ...cfg, spreadPrice: d.spreadPrice }).trades)
+        for (const d of data) trades.push(...runIctBacktest(d.candles, {
+          ...cfg,
+          spreadPrice: d.spreadPrice,
+          fixedStopPrice: d.fixedStopPrice,
+          fixedTpPrice: d.fixedTpPrice,
+          ...(noTimeout ? { maxHoldBars: 0 } : {}),
+        }).trades)
         const stats = bucketStats(trades)
         const totalR = Math.round(stats.expectancyR * stats.trades * 100) / 100
         return {
@@ -101,6 +116,7 @@ export async function GET(req: NextRequest) {
       minTrades,
       combosTested: configs.length,
       costsApplied: applyCosts,
+      exits: { fixedStopPips: stopPips || null, fixedTpPips: tpPips || null, timeout: noTimeout ? 'disabled' : 'per-config' },
       note: 'NET of per-pair spread cost. Ranked by TOTAL RETURN (sum of R across all trades). Configs under minTrades are excluded as too noisy. Past performance does not guarantee future results.',
       best: ranked[0] ?? null,
       leaderboard: ranked.slice(0, 10),
