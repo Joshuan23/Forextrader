@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { href: '/ict', label: 'Watch' },
+  { href: '/ict/strategy', label: 'POI Play' },
   { href: '/ict/poi', label: 'POI' },
   { href: '/ict/dom', label: 'DOM' },
 ]

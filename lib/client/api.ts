@@ -155,3 +155,37 @@ export interface DomResponse {
 export function fetchDom(): Promise<DomResponse> {
   return getJson<DomResponse>('/api/ict/dom')
 }
+
+export interface PoiPlay {
+  bias: 'bearish' | 'bullish'
+  direction: 'long' | 'short'
+  sweepType: 'buyside' | 'sellside'
+  sweepLevel: number
+  poiTop: number
+  poiBottom: number
+  state: 'waiting' | 'mitigating'
+  entry: number
+  stopLoss: number
+  takeProfit: number
+  riskReward: number
+  targetIsLiquidity: boolean
+  distancePips: number
+}
+export interface PoiStrategyPair {
+  symbol: string
+  name?: string
+  status?: string
+  error?: string
+  lastClose?: number
+  plan?: PoiPlay | null
+  reason?: string
+}
+export interface PoiStrategyResponse {
+  scannedAt: string
+  timeframe: string
+  note: string
+  pairs: PoiStrategyPair[]
+}
+export function fetchPoiStrategy(): Promise<PoiStrategyResponse> {
+  return getJson<PoiStrategyResponse>('/api/ict/strategy')
+}
