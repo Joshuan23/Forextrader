@@ -197,6 +197,7 @@ export interface OrderBookLevel {
 }
 export interface ExchangeOrderBook {
   instrument: string
+  category: 'Forex' | 'Crypto' | 'Stocks'
   venue: string
   venueSymbol: string
   label: string
@@ -215,11 +216,23 @@ export interface OrderBookInstrument {
   venueSymbol: string
   label: string
 }
+export interface InstrumentGroup {
+  category: 'Forex' | 'Crypto' | 'Stocks'
+  instruments: OrderBookInstrument[]
+}
+export interface InstrumentGroupsResponse {
+  ok?: boolean
+  validated: boolean
+  groups: InstrumentGroup[]
+  note: string
+}
 export interface OrderBookResponse {
   ok?: boolean
-  instruments: OrderBookInstrument[]
   book: ExchangeOrderBook
   note: string
+}
+export function fetchOrderBookInstruments(): Promise<InstrumentGroupsResponse> {
+  return getJson<InstrumentGroupsResponse>('/api/orderbook/instruments')
 }
 export function fetchOrderBook(symbol = 'XAU/USD', depth = 20): Promise<OrderBookResponse> {
   return getJson<OrderBookResponse>(`/api/orderbook?symbol=${encodeURIComponent(symbol)}&depth=${depth}`)
