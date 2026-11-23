@@ -9,6 +9,7 @@ import {
   Crosshair,
   CandlestickChart,
   BookOpen,
+  Activity,
   NotebookPen,
   BarChart3,
   Settings,
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/ict', label: 'ICT', icon: Crosshair },
+  { href: '/gamma', label: 'Gamma', icon: Activity },
   { href: '/orderbook', label: 'Order Book', icon: BookOpen },
   { href: '/pairs', label: 'Pairs', icon: CandlestickChart },
   { href: '/journal', label: 'Journal', icon: NotebookPen },
@@ -102,7 +104,7 @@ export function Nav() {
 export function MobileNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden">
-      <div className="grid grid-cols-8">
+      <div className="grid grid-cols-9">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
           <MobileTab key={href} href={href} label={label} icon={Icon} />
         ))}
