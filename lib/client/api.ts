@@ -237,3 +237,34 @@ export function fetchOrderBookInstruments(): Promise<InstrumentGroupsResponse> {
 export function fetchOrderBook(symbol = 'XAU/USD', depth = 20): Promise<OrderBookResponse> {
   return getJson<OrderBookResponse>(`/api/orderbook?symbol=${encodeURIComponent(symbol)}&depth=${depth}`)
 }
+
+export interface GexStrike {
+  strike: number
+  callGex: number
+  putGex: number
+  netGex: number
+  callOi: number
+  putOi: number
+}
+export interface Gex {
+  symbol: string
+  spot: number
+  expiry: string
+  expiryLabel: string
+  expiries: { unix: number; label: string }[]
+  asOf: number
+  netGex: number
+  callWall: number | null
+  putWall: number | null
+  flip: number | null
+  maxAbs: number
+  strikes: GexStrike[]
+}
+export interface GexResponse {
+  ok?: boolean
+  gex: Gex
+  note: string
+}
+export function fetchGamma(symbol = 'SPY', expiry?: number): Promise<GexResponse> {
+  return getJson<GexResponse>(`/api/gamma?symbol=${encodeURIComponent(symbol)}${expiry ? `&expiry=${expiry}` : ''}`)
+}
