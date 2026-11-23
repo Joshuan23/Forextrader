@@ -189,3 +189,38 @@ export interface PoiStrategyResponse {
 export function fetchPoiStrategy(): Promise<PoiStrategyResponse> {
   return getJson<PoiStrategyResponse>('/api/ict/strategy')
 }
+
+export interface OrderBookLevel {
+  price: number
+  size: number
+  total: number
+}
+export interface ExchangeOrderBook {
+  instrument: string
+  venue: string
+  venueSymbol: string
+  label: string
+  bids: OrderBookLevel[]
+  asks: OrderBookLevel[]
+  bestBid: number
+  bestAsk: number
+  mid: number
+  spread: number
+  spreadPct: number
+  maxTotal: number
+  asOf: number
+}
+export interface OrderBookInstrument {
+  symbol: string
+  venueSymbol: string
+  label: string
+}
+export interface OrderBookResponse {
+  ok?: boolean
+  instruments: OrderBookInstrument[]
+  book: ExchangeOrderBook
+  note: string
+}
+export function fetchOrderBook(symbol = 'XAU/USD', depth = 20): Promise<OrderBookResponse> {
+  return getJson<OrderBookResponse>(`/api/orderbook?symbol=${encodeURIComponent(symbol)}&depth=${depth}`)
+}
