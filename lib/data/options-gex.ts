@@ -1,27 +1,25 @@
 // Dealer Gamma Exposure (GEX) — computed from the live options chain.
 //
-// OANDA has no options data, so we pull the chain from Yahoo (open interest +
-// implied vol per strike) and compute dealer gamma ourselves with Black-Scholes.
+// OANDA has no options data. Primary source: CBOE's free delayed-quotes feed
+// (the exchange itself — no key, includes open interest, IV and GAMMA per
+// contract). Fallback: Yahoo's options chain, which now requires a cookie +
+// "crumb" handshake (requests without it return HTTP 401).
+//
 // Convention (SpotGamma-style): dealers are long call gamma, short put gamma,
 // so a strike's NET GEX = callGEX − putGEX, in dollars per 1% move of spot.
 //
 //   GEX$ (per leg) = Γ · OI · 100 · S² · 0.01
-//   Γ (Black-Scholes) = φ(d1) / (S · σ · √T)
+//   Γ = exchange-supplied gamma, else Black-Scholes φ(d1) / (S · σ · √T)
 //
 // Gamma walls = the strikes with the largest +/- net GEX (price magnets).
 // Flip level  = the strike where cumulative net GEX crosses zero (below it
 //               dealers are short gamma → volatility expands; above → pins).
 
-const YF_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  Accept: 'application/json, text/plain, */*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  Origin: 'https://finance.yahoo.com',
-  Referer: 'https://finance.yahoo.com/',
-}
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 const RISK_FREE = 0.045
 const YEAR_MS = 365.25 * 24 * 3600 * 1000
+const CLOSE_UTC_HOUR = 21 // ~4pm ET: options expire at the close
 
 function normPdf(x: number): number {
   return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI)
@@ -44,6 +42,7 @@ export interface GexStrike {
 
 export interface GexResult {
   symbol: string
+  source: 'CBOE' | 'Yahoo'
   spot: number
   expiry: string          // ISO of the expiry used
   expiryLabel: string     // e.g. 11/23
@@ -57,57 +56,148 @@ export interface GexResult {
   strikes: GexStrike[]    // descending by strike (high at top)
 }
 
-interface YfOption { strike: number; openInterest?: number; impliedVolatility?: number }
-interface YfChain {
-  optionChain?: {
-    result?: {
-      underlyingSymbol?: string
-      expirationDates?: number[]
-      quote?: { regularMarketPrice?: number }
-      options?: { expirationDate?: number; calls?: YfOption[]; puts?: YfOption[] }[]
-    }[]
-    error?: unknown
-  }
-}
+// Normalized chain the GEX math runs on (one expiry).
+interface Leg { strike: number; side: 'call' | 'put'; oi: number; iv: number; gamma?: number }
+interface Chain { source: GexResult['source']; spot: number; expSec: number; expiries: number[]; legs: Leg[] }
+
+const dayKey = (unixSec: number) => new Date(unixSec * 1000).toISOString().slice(0, 10)
 
 function labelOf(unixSec: number): string {
   const d = new Date(unixSec * 1000)
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
 }
 
-export async function fetchGex(symbol: string, expiryUnix?: number, rangePct = 0.12): Promise<GexResult> {
-  const sym = symbol.toUpperCase().trim()
-  const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(sym)}${expiryUnix ? `?date=${expiryUnix}` : ''}`
-  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000), cache: 'no-store' })
-  if (!res.ok) throw new Error(`Options chain HTTP ${res.status} for ${sym}`)
+// Pick the requested expiry (matched by calendar day so values round-trip
+// across sources) or the nearest one that hasn't expired yet.
+function chooseExpiry(expiries: number[], requested?: number): number | undefined {
+  const sorted = [...expiries].sort((a, b) => a - b)
+  if (requested) {
+    const hit = sorted.find((e) => dayKey(e) === dayKey(requested))
+    if (hit) return hit
+  }
+  const now = Date.now() / 1000
+  return sorted.find((e) => e > now) ?? sorted[sorted.length - 1]
+}
+
+// ── CBOE (primary) ──────────────────────────────────────────────────
+interface CboeOption { option: string; iv?: number; open_interest?: number; gamma?: number }
+interface CboeResp { data?: { current_price?: number; options?: CboeOption[] } }
+
+const CBOE_INDEX = new Set(['SPX', 'NDX', 'RUT', 'VIX', 'XSP', 'DJX'])
+
+async function fromCboe(sym: string, expiryUnix?: number): Promise<Chain> {
+  const code = CBOE_INDEX.has(sym) ? `_${sym}` : sym
+  const res = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${code}.json`, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`CBOE HTTP ${res.status}`)
+  const json = (await res.json()) as CboeResp
+  const spot = json.data?.current_price
+  const opts = json.data?.options ?? []
+  if (!spot || !opts.length) throw new Error('CBOE returned no chain')
+
+  // OCC symbol: ROOT + YYMMDD + C/P + strike×1000 (8 digits)
+  const parsed: (Leg & { expSec: number })[] = []
+  for (const o of opts) {
+    const m = /^(.+?)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/.exec(o.option)
+    if (!m) continue
+    const expSec = Date.UTC(2000 + Number(m[2]), Number(m[3]) - 1, Number(m[4]), CLOSE_UTC_HOUR) / 1000
+    parsed.push({
+      expSec,
+      strike: Number(m[6]) / 1000,
+      side: m[5] === 'C' ? 'call' : 'put',
+      oi: o.open_interest ?? 0,
+      iv: o.iv ?? 0,
+      gamma: o.gamma,
+    })
+  }
+  const expiries = [...new Set(parsed.map((p) => p.expSec))]
+  const expSec = chooseExpiry(expiries, expiryUnix)
+  if (!expSec) throw new Error('CBOE chain has no expiries')
+  return {
+    source: 'CBOE',
+    spot,
+    expSec,
+    expiries: expiries.filter((e) => e >= Date.now() / 1000 - 86400).sort((a, b) => a - b),
+    legs: parsed.filter((p) => p.expSec === expSec),
+  }
+}
+
+// ── Yahoo (fallback, needs cookie + crumb) ──────────────────────────
+interface YfOption { strike: number; openInterest?: number; impliedVolatility?: number }
+interface YfChain {
+  optionChain?: {
+    result?: {
+      expirationDates?: number[]
+      quote?: { regularMarketPrice?: number }
+      options?: { expirationDate?: number; calls?: YfOption[]; puts?: YfOption[] }[]
+    }[]
+  }
+}
+
+let yfSession: { cookie: string; crumb: string; at: number } | null = null
+
+async function yahooSession(): Promise<{ cookie: string; crumb: string }> {
+  if (yfSession && Date.now() - yfSession.at < 30 * 60_000) return yfSession
+  const seed = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(6000) })
+  const setCookies = typeof seed.headers.getSetCookie === 'function' ? seed.headers.getSetCookie() : [seed.headers.get('set-cookie') ?? '']
+  const cookie = setCookies.map((c) => c.split(';')[0]).filter(Boolean).join('; ')
+  if (!cookie) throw new Error('Yahoo gave no session cookie')
+  const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+    headers: { 'User-Agent': UA, Cookie: cookie },
+    signal: AbortSignal.timeout(6000),
+  })
+  const crumb = (await crumbRes.text()).trim()
+  if (!crumbRes.ok || !crumb || crumb.includes('<')) throw new Error(`Yahoo crumb HTTP ${crumbRes.status}`)
+  yfSession = { cookie, crumb, at: Date.now() }
+  return yfSession
+}
+
+async function fromYahoo(sym: string, expiryUnix?: number): Promise<Chain> {
+  const { cookie, crumb } = await yahooSession()
+  // Yahoo keys expiries at 00:00 UTC of the expiry day.
+  const date = expiryUnix ? `&date=${Date.parse(`${dayKey(expiryUnix)}T00:00:00Z`) / 1000}` : ''
+  const res = await fetch(
+    `https://query2.finance.yahoo.com/v7/finance/options/${encodeURIComponent(sym)}?crumb=${encodeURIComponent(crumb)}${date}`,
+    { headers: { 'User-Agent': UA, Cookie: cookie, Accept: 'application/json' }, signal: AbortSignal.timeout(8000), cache: 'no-store' }
+  )
+  if (!res.ok) {
+    if (res.status === 401) yfSession = null // stale crumb — refresh next time
+    throw new Error(`Yahoo HTTP ${res.status}`)
+  }
   const json = (await res.json()) as YfChain
   const result = json.optionChain?.result?.[0]
   const chain = result?.options?.[0]
   const spot = result?.quote?.regularMarketPrice
-  if (!result || !chain || !spot) throw new Error(`No options chain for ${sym}`)
-
+  if (!result || !chain || !spot) throw new Error('Yahoo returned no chain')
   const expSec = chain.expirationDate ?? result.expirationDates?.[0] ?? Math.floor(Date.now() / 1000)
-  const T = Math.max((expSec * 1000 - Date.now()) / YEAR_MS, 0.25 / 365) // ≥ a few hours
+  const legs: Leg[] = [
+    ...(chain.calls ?? []).map((o) => ({ strike: o.strike, side: 'call' as const, oi: o.openInterest ?? 0, iv: o.impliedVolatility ?? 0 })),
+    ...(chain.puts ?? []).map((o) => ({ strike: o.strike, side: 'put' as const, oi: o.openInterest ?? 0, iv: o.impliedVolatility ?? 0 })),
+  ]
+  return { source: 'Yahoo', spot, expSec, expiries: result.expirationDates ?? [expSec], legs }
+}
 
+// ── GEX math (source-agnostic) ──────────────────────────────────────
+export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
+  const { spot } = c
+  const T = Math.max((c.expSec * 1000 - Date.now()) / YEAR_MS, 0.25 / 365) // ≥ a few hours
   const lo = spot * (1 - rangePct)
   const hi = spot * (1 + rangePct)
+
   const byStrike = new Map<number, GexStrike>()
-  const add = (leg: YfOption[] | undefined, side: 'call' | 'put') => {
-    for (const o of leg ?? []) {
-      if (o.strike < lo || o.strike > hi) continue
-      const oi = o.openInterest ?? 0
-      const iv = o.impliedVolatility ?? 0
-      if (oi <= 0 || iv <= 0) continue
-      const gamma = bsGamma(spot, o.strike, T, iv)
-      const gex = gamma * oi * 100 * spot * spot * 0.01 // $ per 1% move
-      const row = byStrike.get(o.strike) ?? { strike: o.strike, callGex: 0, putGex: 0, netGex: 0, callOi: 0, putOi: 0 }
-      if (side === 'call') { row.callGex += gex; row.callOi += oi }
-      else { row.putGex += gex; row.putOi += oi }
-      byStrike.set(o.strike, row)
-    }
+  for (const l of c.legs) {
+    if (l.strike < lo || l.strike > hi || l.oi <= 0) continue
+    const gamma = l.gamma && l.gamma > 0 ? l.gamma : bsGamma(spot, l.strike, T, l.iv)
+    if (gamma <= 0) continue
+    const gex = gamma * l.oi * 100 * spot * spot * 0.01 // $ per 1% move
+    const row = byStrike.get(l.strike) ?? { strike: l.strike, callGex: 0, putGex: 0, netGex: 0, callOi: 0, putOi: 0 }
+    if (l.side === 'call') { row.callGex += gex; row.callOi += l.oi }
+    else { row.putGex += gex; row.putOi += l.oi }
+    byStrike.set(l.strike, row)
   }
-  add(chain.calls, 'call')
-  add(chain.puts, 'put')
 
   const rows = [...byStrike.values()]
   for (const r of rows) r.netGex = r.callGex - r.putGex
@@ -120,15 +210,14 @@ export async function fetchGex(symbol: string, expiryUnix?: number, rangePct = 0
     if (r.netGex > maxPos) { maxPos = r.netGex; callWall = r.strike }
     if (r.netGex < maxNeg) { maxNeg = r.netGex; putWall = r.strike }
   }
-  // Flip level: cumulative net GEX (ascending strike) sign change.
+  // Flip level: cumulative net GEX (ascending strike) crossing up through zero.
   const asc = [...rows].sort((a, b) => a.strike - b.strike)
-  let cum = 0, flip: number | null = null, prevCum = 0, prevK = asc[0]?.strike
+  let cum = 0, flip: number | null = null, prevK = asc[0]?.strike
   for (const r of asc) {
-    prevCum = cum
+    const prevCum = cum
     cum += r.netGex
     if (prevCum < 0 && cum >= 0) {
-      // linear interpolate between prevK and r.strike
-      const frac = prevCum === cum ? 0 : -prevCum / (cum - prevCum)
+      const frac = -prevCum / (cum - prevCum)
       flip = Math.round((prevK + frac * (r.strike - prevK)) * 100) / 100
     }
     prevK = r.strike
@@ -139,10 +228,11 @@ export async function fetchGex(symbol: string, expiryUnix?: number, rangePct = 0
 
   return {
     symbol: sym,
+    source: c.source,
     spot: Math.round(spot * 100) / 100,
-    expiry: new Date(expSec * 1000).toISOString(),
-    expiryLabel: labelOf(expSec),
-    expiries: (result.expirationDates ?? []).slice(0, 12).map((u) => ({ unix: u, label: labelOf(u) })),
+    expiry: new Date(c.expSec * 1000).toISOString(),
+    expiryLabel: labelOf(c.expSec),
+    expiries: c.expiries.slice(0, 12).map((u) => ({ unix: u, label: labelOf(u) })),
     asOf: Date.now(),
     netGex: Math.round(netGex),
     callWall,
@@ -151,4 +241,17 @@ export async function fetchGex(symbol: string, expiryUnix?: number, rangePct = 0
     maxAbs,
     strikes: rows.sort((a, b) => b.strike - a.strike), // high → low for display
   }
+}
+
+export async function fetchGex(symbol: string, expiryUnix?: number): Promise<GexResult> {
+  const sym = symbol.toUpperCase().trim()
+  const errors: string[] = []
+  for (const source of [fromCboe, fromYahoo]) {
+    try {
+      return computeGex(sym, await source(sym, expiryUnix))
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e))
+    }
+  }
+  throw new Error(`No options data for ${sym} (${errors.join(' · ')})`)
 }

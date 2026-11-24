@@ -137,7 +137,7 @@ function GexView({
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="flex items-center justify-between border-b px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
           <span>Strike</span>
-          <span>Exp {gex.expiryLabel} · Net GEX</span>
+          <span>Exp {gex.expiryLabel} · Net GEX · {gex.source}</span>
         </div>
         {rows.map((r, i) => {
           const next = rows[i + 1]

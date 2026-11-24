@@ -248,6 +248,7 @@ export interface GexStrike {
 }
 export interface Gex {
   symbol: string
+  source: 'CBOE' | 'Yahoo'
   spot: number
   expiry: string
   expiryLabel: string
