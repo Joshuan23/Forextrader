@@ -44,6 +44,9 @@ export interface GexResult {
   symbol: string
   source: 'CBOE' | 'Yahoo'
   spot: number
+  spotLive: boolean       // true when spot came from the live (real-time) feed
+  spotAsOf: number        // ms timestamp of the spot price
+  chainAsOf: string | null // when the exchange last published the chain (OI/IV)
   expiry: string          // ISO of the expiry used
   expiryLabel: string     // e.g. 11/23
   expiries: { unix: number; label: string }[]
@@ -58,7 +61,7 @@ export interface GexResult {
 
 // Normalized chain the GEX math runs on (one expiry).
 interface Leg { strike: number; side: 'call' | 'put'; oi: number; iv: number; gamma?: number }
-interface Chain { source: GexResult['source']; spot: number; expSec: number; expiries: number[]; legs: Leg[] }
+interface Chain { source: GexResult['source']; spot: number; spotLive?: boolean; spotAsOf?: number; chainAsOf?: string | null; expSec: number; expiries: number[]; legs: Leg[] }
 
 const dayKey = (unixSec: number) => new Date(unixSec * 1000).toISOString().slice(0, 10)
 
@@ -81,7 +84,7 @@ function chooseExpiry(expiries: number[], requested?: number): number | undefine
 
 // ── CBOE (primary) ──────────────────────────────────────────────────
 interface CboeOption { option: string; iv?: number; open_interest?: number; gamma?: number }
-interface CboeResp { data?: { current_price?: number; options?: CboeOption[] } }
+interface CboeResp { timestamp?: string; data?: { current_price?: number; options?: CboeOption[] } }
 
 const CBOE_INDEX = new Set(['SPX', 'NDX', 'RUT', 'VIX', 'XSP', 'DJX'])
 
@@ -119,6 +122,7 @@ async function fromCboe(sym: string, expiryUnix?: number): Promise<Chain> {
   return {
     source: 'CBOE',
     spot,
+    chainAsOf: json.timestamp ?? null,
     expSec,
     expiries: expiries.filter((e) => e >= Date.now() / 1000 - 86400).sort((a, b) => a - b),
     legs: parsed.filter((p) => p.expSec === expSec),
@@ -180,6 +184,25 @@ async function fromYahoo(sym: string, expiryUnix?: number): Promise<Chain> {
   return { source: 'Yahoo', spot, expSec, expiries: result.expirationDates ?? [expSec], legs }
 }
 
+// ── Live spot (real-time) ───────────────────────────────────────────
+// Yahoo's chart endpoint is crumb-free and returns the last trade price, so
+// every request re-prices gamma at the CURRENT spot even though OI is daily.
+const YF_INDEX: Record<string, string> = { SPX: '^GSPC', NDX: '^NDX', RUT: '^RUT', VIX: '^VIX', DJX: '^DJI' }
+
+async function liveSpot(sym: string): Promise<{ price: number; asOf: number }> {
+  const t = YF_INDEX[sym] ?? sym
+  const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1m&range=1d&includePrePost=true`, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+    signal: AbortSignal.timeout(5000),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`live spot HTTP ${res.status}`)
+  const json = (await res.json()) as { chart?: { result?: { meta?: { regularMarketPrice?: number; regularMarketTime?: number } }[] } }
+  const meta = json.chart?.result?.[0]?.meta
+  if (!meta?.regularMarketPrice) throw new Error('no live spot')
+  return { price: meta.regularMarketPrice, asOf: (meta.regularMarketTime ?? Date.now() / 1000) * 1000 }
+}
+
 // ── GEX math (source-agnostic) ──────────────────────────────────────
 export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
   const { spot } = c
@@ -190,7 +213,10 @@ export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
   const byStrike = new Map<number, GexStrike>()
   for (const l of c.legs) {
     if (l.strike < lo || l.strike > hi || l.oi <= 0) continue
-    const gamma = l.gamma && l.gamma > 0 ? l.gamma : bsGamma(spot, l.strike, T, l.iv)
+    // Live spot → re-price gamma at the current price (exchange gamma is as
+    // stale as its spot). Otherwise prefer the exchange's own gamma.
+    const model = bsGamma(spot, l.strike, T, l.iv)
+    const gamma = c.spotLive ? (model > 0 ? model : l.gamma ?? 0) : (l.gamma && l.gamma > 0 ? l.gamma : model)
     if (gamma <= 0) continue
     const gex = gamma * l.oi * 100 * spot * spot * 0.01 // $ per 1% move
     const row = byStrike.get(l.strike) ?? { strike: l.strike, callGex: 0, putGex: 0, netGex: 0, callOi: 0, putOi: 0 }
@@ -230,6 +256,9 @@ export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
     symbol: sym,
     source: c.source,
     spot: Math.round(spot * 100) / 100,
+    spotLive: !!c.spotLive,
+    spotAsOf: c.spotAsOf ?? Date.now(),
+    chainAsOf: c.chainAsOf ?? null,
     expiry: new Date(c.expSec * 1000).toISOString(),
     expiryLabel: labelOf(c.expSec),
     expiries: c.expiries.slice(0, 12).map((u) => ({ unix: u, label: labelOf(u) })),
@@ -246,9 +275,13 @@ export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
 export async function fetchGex(symbol: string, expiryUnix?: number): Promise<GexResult> {
   const sym = symbol.toUpperCase().trim()
   const errors: string[] = []
+  const live = liveSpot(sym).catch(() => null)
   for (const source of [fromCboe, fromYahoo]) {
     try {
-      return computeGex(sym, await source(sym, expiryUnix))
+      const chain = await source(sym, expiryUnix)
+      const spot = await live
+      if (spot) Object.assign(chain, { spot: spot.price, spotLive: true, spotAsOf: spot.asOf })
+      return computeGex(sym, chain)
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e))
     }

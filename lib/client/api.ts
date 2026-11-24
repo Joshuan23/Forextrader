@@ -250,6 +250,9 @@ export interface Gex {
   symbol: string
   source: 'CBOE' | 'Yahoo'
   spot: number
+  spotLive: boolean
+  spotAsOf: number
+  chainAsOf: string | null
   expiry: string
   expiryLabel: string
   expiries: { unix: number; label: string }[]
