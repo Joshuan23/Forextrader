@@ -21,6 +21,9 @@ export default function GammaPage() {
   useEffect(() => {
     setData(null)
     load(symbol, expiry)
+    // Live: re-price gamma at the current spot every 15s (keeps the view, no flicker).
+    const t = setInterval(() => load(symbol, expiry), 15_000)
+    return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, expiry])
 
@@ -98,8 +101,20 @@ function GexView({
 }) {
   // Insert a spot marker between the two strikes it sits between.
   const rows = gex.strikes
+  const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
   return (
     <div className="space-y-3">
+      {/* Live status */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className={cn('h-2 w-2 rounded-full', gex.spotLive ? 'animate-pulse bg-long' : 'bg-amber-500')} />
+          {gex.spotLive ? 'LIVE' : 'DELAYED'} spot · {time(gex.spotAsOf)} · refreshes every 15s
+        </span>
+        <span>
+          OI/IV: {gex.source}{gex.chainAsOf ? ` · ${gex.chainAsOf}` : ''}
+        </span>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Spot" value={gex.spot.toLocaleString()} />

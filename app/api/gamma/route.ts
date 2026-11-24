@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       gex,
-      note: 'Dealer GEX computed from the live options chain (CBOE delayed quotes, Yahoo fallback). Call GEX = dealer long gamma (green), Put GEX = dealer short gamma (red). Positive net GEX pins price (walls act as magnets); below the flip level dealers are short gamma and moves accelerate. Open interest updates once per session.',
+      note: 'Dealer GEX re-priced every request at the LIVE spot (Black-Scholes gamma on each contract\'s IV). Open interest comes from the OCC once per trading day — that is true for every GEX provider. Call GEX = dealer long gamma (green), Put GEX = dealer short gamma (red). Above the flip level dealers pin price; below it moves accelerate.',
     })
   } catch (e) {
     const { body, status } = errorResponse(e)
