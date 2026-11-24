@@ -47,6 +47,8 @@ export interface GexResult {
   spotLive: boolean       // true when spot came from the live (real-time) feed
   spotAsOf: number        // ms timestamp of the spot price
   chainAsOf: string | null // when the exchange last published the chain (OI/IV)
+  session: MarketSession  // pre / regular / post / closed
+  chainCachedAt: number   // ms — when this server last pulled the chain
   expiry: string          // ISO of the expiry used
   expiryLabel: string     // e.g. 11/23
   expiries: { unix: number; label: string }[]
@@ -61,7 +63,8 @@ export interface GexResult {
 
 // Normalized chain the GEX math runs on (one expiry).
 interface Leg { strike: number; side: 'call' | 'put'; oi: number; iv: number; gamma?: number }
-interface Chain { source: GexResult['source']; spot: number; spotLive?: boolean; spotAsOf?: number; chainAsOf?: string | null; expSec: number; expiries: number[]; legs: Leg[] }
+export type MarketSession = 'pre' | 'regular' | 'post' | 'closed'
+interface Chain { source: GexResult['source']; spot: number; spotLive?: boolean; spotAsOf?: number; session?: MarketSession; chainAsOf?: string | null; cachedAt?: number; expSec: number; expiries: number[]; legs: Leg[] }
 
 const dayKey = (unixSec: number) => new Date(unixSec * 1000).toISOString().slice(0, 10)
 
@@ -184,12 +187,34 @@ async function fromYahoo(sym: string, expiryUnix?: number): Promise<Chain> {
   return { source: 'Yahoo', spot, expSec, expiries: result.expirationDates ?? [expSec], legs }
 }
 
-// ── Live spot (real-time) ───────────────────────────────────────────
-// Yahoo's chart endpoint is crumb-free and returns the last trade price, so
-// every request re-prices gamma at the CURRENT spot even though OI is daily.
+// ── Live spot (real-time, incl. pre/after-hours) ────────────────────
+// Yahoo's chart endpoint is crumb-free. We take the NEWEST trade — the last
+// 1-minute bar including pre/post-market — so the price keeps moving outside
+// 9:30–4:00, and read Yahoo's trading periods to label the session.
 const YF_INDEX: Record<string, string> = { SPX: '^GSPC', NDX: '^NDX', RUT: '^RUT', VIX: '^VIX', DJX: '^DJI' }
 
-async function liveSpot(sym: string): Promise<{ price: number; asOf: number }> {
+interface Period { start: number; end: number }
+interface YfChart {
+  chart?: {
+    result?: {
+      meta?: {
+        regularMarketPrice?: number
+        regularMarketTime?: number
+        currentTradingPeriod?: { pre?: Period; regular?: Period; post?: Period }
+      }
+      timestamp?: number[]
+      indicators?: { quote?: { close?: (number | null)[] }[] }
+    }[]
+  }
+}
+
+interface LiveSpot { price: number; asOf: number; session: MarketSession }
+const spotCache = new Map<string, { at: number; v: LiveSpot }>()
+const SPOT_TTL = 3_000 // shared across viewers; Yahoo itself updates ~every few seconds
+
+async function liveSpot(sym: string): Promise<LiveSpot> {
+  const hit = spotCache.get(sym)
+  if (hit && Date.now() - hit.at < SPOT_TTL) return hit.v
   const t = YF_INDEX[sym] ?? sym
   const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1m&range=1d&includePrePost=true`, {
     headers: { 'User-Agent': UA, Accept: 'application/json' },
@@ -197,16 +222,59 @@ async function liveSpot(sym: string): Promise<{ price: number; asOf: number }> {
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`live spot HTTP ${res.status}`)
-  const json = (await res.json()) as { chart?: { result?: { meta?: { regularMarketPrice?: number; regularMarketTime?: number } }[] } }
-  const meta = json.chart?.result?.[0]?.meta
+  const r = ((await res.json()) as YfChart).chart?.result?.[0]
+  const meta = r?.meta
   if (!meta?.regularMarketPrice) throw new Error('no live spot')
-  return { price: meta.regularMarketPrice, asOf: (meta.regularMarketTime ?? Date.now() / 1000) * 1000 }
+
+  let price = meta.regularMarketPrice
+  let asOf = (meta.regularMarketTime ?? 0) * 1000
+  // Newest 1-minute bar (covers pre/post-market) wins if it's more recent.
+  const ts = r?.timestamp ?? []
+  const closes = r?.indicators?.quote?.[0]?.close ?? []
+  for (let i = ts.length - 1; i >= 0; i--) {
+    const c = closes[i]
+    if (c != null && Number.isFinite(c)) {
+      if (ts[i] * 1000 > asOf) { price = c; asOf = ts[i] * 1000 }
+      break
+    }
+  }
+
+  const now = Date.now() / 1000
+  const p = meta.currentTradingPeriod
+  const within = (x?: Period) => !!x && now >= x.start && now < x.end
+  const session: MarketSession = within(p?.regular) ? 'regular' : within(p?.pre) ? 'pre' : within(p?.post) ? 'post' : 'closed'
+
+  const v = { price, asOf: asOf || Date.now(), session }
+  spotCache.set(sym, { at: Date.now(), v })
+  return v
+}
+
+// ── Chain cache ─────────────────────────────────────────────────────
+// The chain (OI/IV) is large and only changes slowly, so we hold it for a
+// minute; every request still re-prices gamma at the live spot. That's what
+// lets the page refresh every few seconds without re-downloading the chain.
+const chainCache = new Map<string, { at: number; chain: Chain }>()
+const CHAIN_TTL = 60_000
+
+async function cachedChain(
+  name: string,
+  load: (sym: string, exp?: number) => Promise<Chain>,
+  sym: string,
+  exp?: number
+): Promise<Chain> {
+  const key = `${name}:${sym}:${exp ?? ''}`
+  const hit = chainCache.get(key)
+  if (hit && Date.now() - hit.at < CHAIN_TTL) return hit.chain
+  const chain = { ...(await load(sym, exp)), cachedAt: Date.now() }
+  chainCache.set(key, { at: Date.now(), chain })
+  if (chainCache.size > 50) chainCache.delete(chainCache.keys().next().value as string)
+  return chain
 }
 
 // ── GEX math (source-agnostic) ──────────────────────────────────────
 export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
   const { spot } = c
-  const T = Math.max((c.expSec * 1000 - Date.now()) / YEAR_MS, 0.25 / 365) // ≥ a few hours
+  const T = Math.max((c.expSec * 1000 - Date.now()) / YEAR_MS, 15 / (60 * 24 * 365)) // ≥ 15 min (0DTE gamma stays realistic)
   const lo = spot * (1 - rangePct)
   const hi = spot * (1 + rangePct)
 
@@ -259,6 +327,8 @@ export function computeGex(sym: string, c: Chain, rangePct = 0.12): GexResult {
     spotLive: !!c.spotLive,
     spotAsOf: c.spotAsOf ?? Date.now(),
     chainAsOf: c.chainAsOf ?? null,
+    session: c.session ?? 'closed',
+    chainCachedAt: c.cachedAt ?? Date.now(),
     expiry: new Date(c.expSec * 1000).toISOString(),
     expiryLabel: labelOf(c.expSec),
     expiries: c.expiries.slice(0, 12).map((u) => ({ unix: u, label: labelOf(u) })),
@@ -276,12 +346,15 @@ export async function fetchGex(symbol: string, expiryUnix?: number): Promise<Gex
   const sym = symbol.toUpperCase().trim()
   const errors: string[] = []
   const live = liveSpot(sym).catch(() => null)
-  for (const source of [fromCboe, fromYahoo]) {
+  const sources: [string, (s: string, e?: number) => Promise<Chain>][] = [['cboe', fromCboe], ['yahoo', fromYahoo]]
+  for (const [name, load] of sources) {
     try {
-      const chain = await source(sym, expiryUnix)
+      const chain = await cachedChain(name, load, sym, expiryUnix)
       const spot = await live
-      if (spot) Object.assign(chain, { spot: spot.price, spotLive: true, spotAsOf: spot.asOf })
-      return computeGex(sym, chain)
+      return computeGex(
+        sym,
+        spot ? { ...chain, spot: spot.price, spotLive: true, spotAsOf: spot.asOf, session: spot.session } : chain
+      )
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e))
     }

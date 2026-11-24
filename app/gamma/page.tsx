@@ -21,8 +21,8 @@ export default function GammaPage() {
   useEffect(() => {
     setData(null)
     load(symbol, expiry)
-    // Live: re-price gamma at the current spot every 15s (keeps the view, no flicker).
-    const t = setInterval(() => load(symbol, expiry), 15_000)
+    // Live: re-price gamma at the current spot every 5s (keeps the view, no flicker).
+    const t = setInterval(() => load(symbol, expiry), 5_000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, expiry])
@@ -101,19 +101,9 @@ function GexView({
 }) {
   // Insert a spot marker between the two strikes it sits between.
   const rows = gex.strikes
-  const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
   return (
     <div className="space-y-3">
-      {/* Live status */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className={cn('h-2 w-2 rounded-full', gex.spotLive ? 'animate-pulse bg-long' : 'bg-amber-500')} />
-          {gex.spotLive ? 'LIVE' : 'DELAYED'} spot · {time(gex.spotAsOf)} · refreshes every 15s
-        </span>
-        <span>
-          OI/IV: {gex.source}{gex.chainAsOf ? ` · ${gex.chainAsOf}` : ''}
-        </span>
-      </div>
+      <LiveBar gex={gex} />
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -198,6 +188,39 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'lo
     <div className="rounded-lg border bg-card p-2.5">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={cn('font-mono text-sm font-semibold', tone === 'long' ? 'text-long' : tone === 'short' ? 'text-short' : 'text-foreground')}>{value}</div>
+    </div>
+  )
+}
+
+const SESSION: Record<Gex['session'], { label: string; dot: string }> = {
+  regular: { label: 'LIVE · market open', dot: 'animate-pulse bg-long' },
+  pre: { label: 'LIVE · pre-market', dot: 'animate-pulse bg-amber-500' },
+  post: { label: 'LIVE · after-hours', dot: 'animate-pulse bg-amber-500' },
+  closed: { label: 'Market closed · last price', dot: 'bg-muted-foreground' },
+}
+
+// Ticking "updated Xs ago" so you can see the feed is alive between refreshes.
+function LiveBar({ gex }: { gex: Gex }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const ago = (ms: number) => {
+    const s = Math.max(0, Math.round((now - ms) / 1000))
+    return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  }
+  const st = gex.spotLive ? SESSION[gex.session] : { label: 'DELAYED spot (exchange feed)', dot: 'bg-amber-500' }
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-[11px] text-muted-foreground">
+      <span className="flex items-center gap-1.5 font-medium text-foreground">
+        <span className={cn('h-2 w-2 rounded-full', st.dot)} />
+        {st.label}
+      </span>
+      <span>
+        Price {ago(gex.spotAsOf)} · GEX recalculated {ago(gex.asOf)} · OI/IV {gex.source}
+        {gex.chainAsOf ? ` (${gex.chainAsOf})` : ''}
+      </span>
     </div>
   )
 }

@@ -253,6 +253,8 @@ export interface Gex {
   spotLive: boolean
   spotAsOf: number
   chainAsOf: string | null
+  session: 'pre' | 'regular' | 'post' | 'closed'
+  chainCachedAt: number
   expiry: string
   expiryLabel: string
   expiries: { unix: number; label: string }[]
